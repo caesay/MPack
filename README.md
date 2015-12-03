@@ -10,7 +10,7 @@ Its easiest to understand how this library works if you think in terms of json. 
 
 Usage
 -----
-1. Create a object model that can be represented as MsgPack. Here we are creating a dictionary, but really it can be anything:
+Create a object model that can be represented as MsgPack. Here we are creating a dictionary, but really it can be anything:
 ```csharp
 MPackMap dictionary = new MPackMap
 {
@@ -29,19 +29,19 @@ MPackMap dictionary = new MPackMap
     {"int2", MPack.FromInteger(50)}
 };
 ```
-2. Serialize the data to a byte array or to a stream to be saved, transmitted, etc:
+Serialize the data to a byte array or to a stream to be saved, transmitted, etc:
 ```csharp
 byte[] encodedBytes = dictionary.EncodeToBytes();
 // -- or --
 dictionary.EncodeToStream(stream);
 ```
-3. Parse the binary data back into a MPack object model:
+Parse the binary data back into a MPack object model:
 ```csharp
 var reconstructed = MPack.ParseBytes(encodedBytes) as MPackMap;
 // -- or --
 var reconstructed = MPack.ParseStream(stream) as MPackMap;
 ```
-4. Turn MPack objects back into types that we understand with the generic `To<>()` method. Since we know the types of everything here we can just call `To<bool>()` to reconstruct our bool, but if you don't know you can access the instance enum `MPack.ValueType` to know what kind of value it is:
+Turn MPack objects back into types that we understand with the generic `To<>()` method. Since we know the types of everything here we can just call `To<bool>()` to reconstruct our bool, but if you don't know you can access the instance enum `MPack.ValueType` to know what kind of value it is:
 ```csharp
 bool bool1 = reconstructed["bool1"].To<bool>();
 var array1 = reconstructed["array1"] as MPackArray;
