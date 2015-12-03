@@ -250,7 +250,7 @@ namespace MsgPack
                 var rawByte = new byte[4];
                 stream.Read(rawByte, 0, 4);
                 rawByte = BytesTools.SwapBytes(rawByte);
-                var len = BitConverter.ToInt16(rawByte, 0);
+                var len = BitConverter.ToInt32(rawByte, 0);
 
                 MPackArray array = new MPackArray();
                 for (int i = 0; i < len; i++)
