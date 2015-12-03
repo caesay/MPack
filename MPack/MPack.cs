@@ -13,7 +13,7 @@
 //  bux fixes and an API that remains lightweight compared to the official one,              //
 //  while remaining robust and easy to use.                                                  //
 //                                                                                           //                 
-//  Written by Caelan Sayler (caelan@caesa.ca)                                               //
+//  Written by Caelan Sayler [caelantsayler]at[gmail]dot[com]                                //
 //  Original URL: https://github.com/caesay/MPack                                            //
 //  Licensed: Attribution 4.0 (CC BY 4.0) http://creativecommons.org/licenses/by/4.0/        //
 //                                                                                           //
