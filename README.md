@@ -37,9 +37,9 @@ dictionary.EncodeToStream(stream);
 ```
 Parse the binary data back into a MPack object model:
 ```csharp
-var reconstructed = MPack.ParseBytes(encodedBytes) as MPackMap;
+var reconstructed = MPack.ParseFromBytes(encodedBytes) as MPackMap;
 // -- or --
-var reconstructed = MPack.ParseStream(stream) as MPackMap;
+var reconstructed = MPack.ParseFromStream(stream) as MPackMap;
 ```
 Turn MPack objects back into types that we understand with the generic `To<>()` method. Since we know the types of everything here we can just call `To<bool>()` to reconstruct our bool, but if you don't know you can access the instance enum `MPack.ValueType` to know what kind of value it is:
 ```csharp

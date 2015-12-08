@@ -25,6 +25,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace MsgPack
@@ -44,6 +45,7 @@ namespace MsgPack
         DateTime = 10,
         Binary = 11
     }
+
     public class MPack : IEquatable<MPack>
     {
         public virtual object Value => _value;
@@ -54,316 +56,358 @@ namespace MsgPack
             _value = value;
             _type = type;
         }
+
         protected MPack()
         {
         }
 
         private object _value;
         private MsgPackType _type = MsgPackType.Unknown;
+        private static readonly ReaderLookup _lookup = new ReaderLookup();
 
-        public static MPack ParseBytes(byte[] array)
+        static MPack()
+        {
+            //positive fixint	0xxxxxxx	0x00 - 0x7f
+            _lookup.AddRange(0, 0x7F,
+                (b, s) => FromInteger(b),
+                (b, s, c) => Task.FromResult(FromInteger(b)));
+
+            //positive fixint	0xxxxxxx	0x00 - 0x7f
+            _lookup.AddRange(0x80, 0x8F, (b, s) =>
+            {
+                MPackMap map = new MPackMap();
+                int len = b - 0x80;
+                for (int i = 0; i < len; i++)
+                {
+                    map.Add(MPackExtensions.ReadString(s), ParseFromStream(s));
+                }
+                return map;
+            }, async (b, s, c) =>
+            {
+                MPackMap map = new MPackMap();
+                int len = b - 0x80;
+                for (int i = 0; i < len; i++)
+                {
+                    map.Add(await MPackExtensions.ReadStringAsync(s, c), await ParseFromStreamAsync(s, c));
+                }
+                return map;
+            });
+
+            //fixarray	1001xxxx	0x90 - 0x9f
+            _lookup.AddRange(0x90, 0x9f, (b, s) =>
+            {
+                MPackArray array = new MPackArray();
+                int len = b - 0x90;
+                for (int i = 0; i < len; i++)
+                {
+                    array.Add(ParseFromStream(s));
+                }
+                return array;
+            }, async (b, s, c) =>
+            {
+                MPackArray array = new MPackArray();
+                int len = b - 0x90;
+                for (int i = 0; i < len; i++)
+                {
+                    array.Add(await ParseFromStreamAsync(s, c));
+                }
+                return array;
+            });
+
+            // fixstr	101xxxxx	0xa0 - 0xbf
+            _lookup.AddRange(0xA0, 0xBF, (b, s) =>
+            {
+                int len = b - 0xA0;
+                return FromString(MPackExtensions.ReadString(s, len));
+            }, async (b, s, c) =>
+            {
+                int len = b - 0xA0;
+                return FromString(await MPackExtensions.ReadStringAsync(s, len, c));
+            });
+
+            // negative fixnum stores 5-bit negative integer 111xxxxx
+            _lookup.AddRange(0xE0, 0xFF,
+                (b, s) => FromInteger((sbyte)b),
+                (b, s, c) => Task.FromResult(FromInteger((sbyte)b)));
+
+            // null
+            _lookup.Add(0xC0,
+                (b, s) => Null(),
+                (b, s, c) => Task.FromResult(Null()));
+
+            // note, no 0xC1, it's not used.
+
+            // bool: false
+            _lookup.Add(0xC2,
+                (b, s) => FromBool(false),
+                (b, s, c) => Task.FromResult(FromBool(false)));
+
+            // bool: true
+            _lookup.Add(0xC3,
+                (b, s) => FromBool(true),
+                (b, s, c) => Task.FromResult(FromBool(true)));
+
+            // binary array, max 255
+            _lookup.Add(0xC4, (b, s) =>
+            {
+                int len = s.ReadByte();
+                return FromBytes(s.FillBuffer(len));
+            }, async (b, s, c) =>
+            {
+                int len = await s.ReadByteAsync(c);
+                return FromBytes(await s.FillBufferAsync(len, c));
+            });
+
+            // binary array, max 65535
+            _lookup.Add(0xC5, (b, s) =>
+            {
+                int len = BitConverter.ToInt16(s.FillBuffer(2).SwapBytes(), 0);
+                return FromBytes(s.FillBuffer(len));
+            }, async (b, s, c) =>
+            {
+                int len = BitConverter.ToInt16((await s.FillBufferAsync(2, c))
+                    .SwapBytes(), 0);
+                return FromBytes(await s.FillBufferAsync(len, c));
+            });
+
+            // binary max: 2^32-1                
+            _lookup.Add(0xC6, (b, s) =>
+            {
+                int len = BitConverter.ToInt32(s.FillBuffer(4).SwapBytes(), 0);
+                return FromBytes(s.FillBuffer(len));
+            }, async (b, s, c) =>
+            {
+                int len = BitConverter.ToInt32((await s.FillBufferAsync(4, c))
+                    .SwapBytes(), 0);
+                return FromBytes(await s.FillBufferAsync(len, c));
+            });
+
+            // note 0xC7, 0xC8, 0xC9, not used.
+
+            // float 32 stores a floating point number in IEEE 754 single precision floating point number     
+            _lookup.Add(0xCA, (b, s) =>
+            {
+                var raw = s.FillBuffer(4).SwapBytes();
+                return FromSingle(BitConverter.ToSingle(raw, 0));
+            }, async (b, s, c) =>
+            {
+                var raw = (await s.FillBufferAsync(4, c)).SwapBytes();
+                return FromSingle(BitConverter.ToSingle(raw, 0));
+            });
+
+            // float 64 stores a floating point number in IEEE 754 double precision floating point number        
+            _lookup.Add(0xCB, (b, s) =>
+            {
+                var raw = s.FillBuffer(8).SwapBytes();
+                return FromDouble(BitConverter.ToDouble(raw, 0));
+            }, async (b, s, c) =>
+            {
+                var raw = (await s.FillBufferAsync(8, c)).SwapBytes();
+                return FromDouble(BitConverter.ToDouble(raw, 0));
+            });
+
+            // uint8   0xcc   xxxxxxxx
+            _lookup.Add(0xCC,
+                (b, s) => FromInteger((byte)s.ReadByte()),
+                async (b, s, c) => FromInteger((byte)await s.ReadByteAsync(c)));
+
+            // uint16   0xcd xxxxxxxx xxxxxxxx   
+            _lookup.Add(0xCD, (b, s) =>
+            {
+                var v = BitConverter.ToUInt16(s.FillBuffer(2).SwapBytes(), 0);
+                return FromInteger(v);
+            }, async (b, s, c) =>
+            {
+                var v = BitConverter.ToUInt16((await s.FillBufferAsync(2, c))
+                    .SwapBytes(), 0);
+                return FromInteger(v);
+            });
+
+            // uint32   0xce xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx  
+            _lookup.Add(0xCE, (b, s) =>
+            {
+                var v = BitConverter.ToUInt32(s.FillBuffer(4).SwapBytes(), 0);
+                return FromInteger(v);
+            }, async (b, s, c) =>
+            {
+                var v = BitConverter.ToUInt32((await s.FillBufferAsync(4, c))
+                    .SwapBytes(), 0);
+                return FromInteger(v);
+            });
+
+            // uint64   0xcF   xxxxxxxx (x4)
+            _lookup.Add(0xCF, (b, s) =>
+            {
+                var v = BitConverter.ToUInt64(s.FillBuffer(8).SwapBytes(), 0);
+                return FromInteger(v);
+            }, async (b, s, c) =>
+            {
+                var v = BitConverter.ToUInt64((await s.FillBufferAsync(8, c))
+                    .SwapBytes(), 0);
+                return FromInteger(v);
+            });
+
+            // array (int16 length)
+            _lookup.Add(0xDC, (b, s) =>
+            {
+                int len = BitConverter.ToInt16(s.FillBuffer(2).SwapBytes(), 0);
+                MPackArray array = new MPackArray();
+                for (int i = 0; i < len; i++)
+                {
+                    array.Add(ParseFromStream(s));
+                }
+                return array;
+            }, async (b, s, c) =>
+            {
+                int len = BitConverter.ToInt16((await s.FillBufferAsync(2, c))
+                    .SwapBytes(), 0);
+                MPackArray array = new MPackArray();
+                for (int i = 0; i < len; i++)
+                {
+                    array.Add(await ParseFromStreamAsync(s, c));
+                }
+                return array;
+            });
+
+            // array (int32 length)
+            _lookup.Add(0xDD, (b, s) =>
+            {
+                int len = BitConverter.ToInt32(s.FillBuffer(4).SwapBytes(), 0);
+                MPackArray array = new MPackArray();
+                for (int i = 0; i < len; i++)
+                {
+                    array.Add(ParseFromStream(s));
+                }
+                return array;
+            }, async (b, s, c) =>
+            {
+                int len = BitConverter.ToInt32((await s.FillBufferAsync(4, c))
+                    .SwapBytes(), 0);
+                MPackArray array = new MPackArray();
+                for (int i = 0; i < len; i++)
+                {
+                    array.Add(await ParseFromStreamAsync(s, c));
+                }
+                return array;
+            });
+
+            // map (int16 length)
+            _lookup.Add(0xDE, (b, s) =>
+            {
+                int len = BitConverter.ToInt16(s.FillBuffer(2).SwapBytes(), 0);
+                MPackMap map = new MPackMap();
+                for (int i = 0; i < len; i++)
+                {
+                    var key = MPackExtensions.ReadString(s);
+                    var val = ParseFromStream(s);
+                    map.Add(key, val);
+                }
+                return map;
+            }, async (b, s, c) =>
+            {
+                int len = BitConverter.ToInt16((await s.FillBufferAsync(2, c))
+                    .SwapBytes(), 0);
+                MPackMap map = new MPackMap();
+                for (int i = 0; i < len; i++)
+                {
+                    var key = await MPackExtensions.ReadStringAsync(s, c);
+                    var val = await ParseFromStreamAsync(s, c);
+                    map.Add(key, val);
+                }
+                return map;
+            });
+
+            // map (int32 length)
+            _lookup.Add(0xDF, (b, s) =>
+            {
+                int len = BitConverter.ToInt32(s.FillBuffer(4).SwapBytes(), 0);
+                MPackMap map = new MPackMap();
+                for (int i = 0; i < len; i++)
+                {
+                    var key = MPackExtensions.ReadString(s);
+                    var val = ParseFromStream(s);
+                    map.Add(key, val);
+                }
+                return map;
+            }, async (b, s, c) =>
+            {
+                int len = BitConverter.ToInt32((await s.FillBufferAsync(4, c))
+                    .SwapBytes(), 0);
+                MPackMap map = new MPackMap();
+                for (int i = 0; i < len; i++)
+                {
+                    var key = await MPackExtensions.ReadStringAsync(s, c);
+                    var val = await ParseFromStreamAsync(s, c);
+                    map.Add(key, val);
+                }
+                return map;
+            });
+
+            //  str family
+            _lookup.AddRange(0xD9, 0xDB,
+                (b, s) => FromString(MPackExtensions.ReadString(b, s)),
+                async (b, s, c) => FromString(await MPackExtensions.ReadStringAsync(b, s, c)));
+
+            // int8   0xD0   xxxxxxxx
+            _lookup.Add(0xD0,
+                (b, s) => FromInteger((sbyte)s.ReadByte()),
+                async (b, s, c) => FromInteger((sbyte)await s.ReadByteAsync(c)));
+
+            // int16   0xd1 xxxxxxxx xxxxxxxx   
+            _lookup.Add(0xD1, (b, s) =>
+            {
+                var v = BitConverter.ToInt16(s.FillBuffer(2).SwapBytes(), 0);
+                return FromInteger(v);
+            }, async (b, s, c) =>
+            {
+                var v = BitConverter.ToInt16((await s.FillBufferAsync(2, c))
+                    .SwapBytes(), 0);
+                return FromInteger(v);
+            });
+
+            // int32    xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx  
+            _lookup.Add(0xD2, (b, s) =>
+            {
+                var v = BitConverter.ToInt32(s.FillBuffer(4).SwapBytes(), 0);
+                return FromInteger(v);
+            }, async (b, s, c) =>
+            {
+                var v = BitConverter.ToInt32((await s.FillBufferAsync(4, c))
+                    .SwapBytes(), 0);
+                return FromInteger(v);
+            });
+
+            // int64      xxxxxxxx (x4)
+            _lookup.Add(0xD3, (b, s) =>
+            {
+                var v = BitConverter.ToInt64(s.FillBuffer(8).SwapBytes(), 0);
+                return FromInteger(v);
+            }, async (b, s, c) =>
+            {
+                var v = BitConverter.ToInt64((await s.FillBufferAsync(8, c))
+                    .SwapBytes(), 0);
+                return FromInteger(v);
+            });
+        }
+
+        public static MPack ParseFromBytes(byte[] array)
         {
             using (MemoryStream ms = new MemoryStream(array))
-                return ParseStream(ms);
+                return ParseFromStream(ms);
         }
-        public static MPack ParseStream(Stream stream)
+        public static MPack ParseFromStream(Stream stream)
         {
-            byte lvByte = (byte)stream.ReadByte();
-            if (lvByte <= 0x7F)
-            {
-                //positive fixint	0xxxxxxx	0x00 - 0x7f
-                return FromInteger(lvByte);
-            }
-            if ((lvByte >= 0x80) && (lvByte <= 0x8F))
-            {
-                //fixmap	1000xxxx	0x80 - 0x8f
-                MPackMap map = new MPackMap();
-                int len = lvByte - 0x80;
-                for (int i = 0; i < len; i++)
-                {
-                    map.Add(ReadTools.ReadString(stream), ParseStream(stream));
-                }
-                return map;
-            }
-            if ((lvByte >= 0x90) && (lvByte <= 0x9F))
-            {
-                //fixarray	1001xxxx	0x90 - 0x9f
-                MPackArray array = new MPackArray();
-                int len = lvByte - 0x90;
-                for (int i = 0; i < len; i++)
-                {
-                    array.Add(ParseStream(stream));
-                }
-                return array;
-            }
-            if ((lvByte >= 0xA0) && (lvByte <= 0xBF))
-            {
-                // fixstr	101xxxxx	0xa0 - 0xbf
-                int len = lvByte - 0xA0;
-                return FromString(ReadTools.ReadString(stream, len));
-            }
-            if ((lvByte >= 0xE0) && (lvByte <= 0xFF))
-            {
-                // -1..-32
-                //  negative fixnum stores 5-bit negative integer
-                //  +--------+
-                //  |111YYYYY|
-                //  +--------+                
-                return FromInteger((sbyte)lvByte);
-            }
-            if (lvByte == 0xC0)
-            {
-                return Null();
-            }
-            if (lvByte == 0xC1)
-            {
-                throw new ArgumentException("(never used) type $c1");
-            }
-            if (lvByte == 0xC2)
-            {
-                return FromBool(false);
-            }
-            if (lvByte == 0xC3)
-            {
-                return FromBool(true);
-            }
-            if (lvByte == 0xC4)
-            {
-                // max 255
-                int len = stream.ReadByte();
-                byte[] raw = new byte[len];
-                stream.Read(raw, 0, len);
-                return FromBytes(raw);
-            }
-            if (lvByte == 0xC5)
-            {
-                // max 65535                
-                byte[] raw = new byte[2];
-                stream.Read(raw, 0, 2);
-                raw = BytesTools.SwapBytes(raw);
-                int len = BitConverter.ToInt16(raw, 0);
-
-                // read binary
-                raw = new byte[len];
-                stream.Read(raw, 0, len);
-                return FromBytes(raw);
-            }
-            if (lvByte == 0xC6)
-            {
-                // binary max: 2^32-1                
-                byte[] raw = new byte[4];
-                stream.Read(raw, 0, 4);
-                raw = BytesTools.SwapBytes(raw);
-                int len = BitConverter.ToInt32(raw, 0);
-
-                // read binary
-                raw = new byte[len];
-                stream.Read(raw, 0, len);
-                return FromBytes(raw);
-            }
-            if ((lvByte == 0xC7) || (lvByte == 0xC8) || (lvByte == 0xC9))
-            {
-                throw new Exception("(ext8,ext16,ex32) type $c7,$c8,$c9");
-            }
-            if (lvByte == 0xCA)
-            {
-                // float 32 stores a floating point number in IEEE 754 single precision floating point number     
-                var raw = new byte[4];
-                stream.Read(raw, 0, 4);
-                raw = BytesTools.SwapBytes(raw);
-                return FromSingle(BitConverter.ToSingle(raw, 0));
-            }
-            if (lvByte == 0xCB)
-            {
-                // float 64 stores a floating point number in IEEE 754 double precision floating point number        
-                var rawByte = new byte[8];
-                stream.Read(rawByte, 0, 8);
-                rawByte = BytesTools.SwapBytes(rawByte);
-                return FromDouble(BitConverter.ToDouble(rawByte, 0));
-            }
-            if (lvByte == 0xCC)
-            {
-                // uint8   
-                //      uint 8 stores a 8-bit unsigned integer
-                //      +--------+--------+
-                //      |  0xcc  |ZZZZZZZZ|
-                //      +--------+--------+
-                lvByte = (byte)stream.ReadByte();
-                return FromInteger(lvByte);
-            }
-            if (lvByte == 0xCD)
-            {
-                // uint16      
-                //    uint 16 stores a 16-bit big-endian unsigned integer
-                //    +--------+--------+--------+
-                //    |  0xcd  |ZZZZZZZZ|ZZZZZZZZ|
-                //    +--------+--------+--------+
-                var rawByte = new byte[2];
-                stream.Read(rawByte, 0, 2);
-                rawByte = BytesTools.SwapBytes(rawByte);
-                return FromInteger(BitConverter.ToUInt16(rawByte, 0));
-            }
-            if (lvByte == 0xCE)
-            {
-                //  uint 32 stores a 32-bit big-endian unsigned integer
-                //  +--------+--------+--------+--------+--------+
-                //  |  0xce  |ZZZZZZZZ|ZZZZZZZZ|ZZZZZZZZ|ZZZZZZZZ
-                //  +--------+--------+--------+--------+--------+
-                var rawByte = new byte[4];
-                stream.Read(rawByte, 0, 4);
-                rawByte = BytesTools.SwapBytes(rawByte);
-                return FromInteger(BitConverter.ToUInt32(rawByte, 0));
-            }
-            if (lvByte == 0xCF)
-            {
-                //  uint 64 stores a 64-bit big-endian unsigned integer
-                //  +--------+--------+--------+--------+--------+--------+--------+--------+--------+
-                //  |  0xcf  |ZZZZZZZZ|ZZZZZZZZ|ZZZZZZZZ|ZZZZZZZZ|ZZZZZZZZ|ZZZZZZZZ|ZZZZZZZZ|ZZZZZZZZ|
-                //  +--------+--------+--------+--------+--------+--------+--------+--------+--------+
-                var rawByte = new byte[8];
-                stream.Read(rawByte, 0, 8);
-                rawByte = BytesTools.SwapBytes(rawByte);
-                return FromInteger(BitConverter.ToUInt64(rawByte, 0));
-            }
-            if (lvByte == 0xDC)
-            {
-                //      +--------+--------+--------+~~~~~~~~~~~~~~~~~+
-                //      |  0xdc  |YYYYYYYY|YYYYYYYY|    N objects    |
-                //      +--------+--------+--------+~~~~~~~~~~~~~~~~~+
-                var rawByte = new byte[2];
-                stream.Read(rawByte, 0, 2);
-                rawByte = BytesTools.SwapBytes(rawByte);
-                var len = BitConverter.ToInt16(rawByte, 0);
-
-                MPackArray array = new MPackArray();
-                for (int i = 0; i < len; i++)
-                {
-                    array.Add(ParseStream(stream));
-                }
-                return array;
-            }
-            if (lvByte == 0xDD)
-            {
-                //  +--------+--------+--------+--------+--------+~~~~~~~~~~~~~~~~~+
-                //  |  0xdd  |ZZZZZZZZ|ZZZZZZZZ|ZZZZZZZZ|ZZZZZZZZ|    N objects    |
-                //  +--------+--------+--------+--------+--------+~~~~~~~~~~~~~~~~~+
-                var rawByte = new byte[4];
-                stream.Read(rawByte, 0, 4);
-                rawByte = BytesTools.SwapBytes(rawByte);
-                var len = BitConverter.ToInt32(rawByte, 0);
-
-                MPackArray array = new MPackArray();
-                for (int i = 0; i < len; i++)
-                {
-                    array.Add(ParseStream(stream));
-                }
-                return array;
-            }
-            if (lvByte == 0xD9)
-            {
-                //  str 8 stores a byte array whose length is upto (2^8)-1 bytes:
-                //  +--------+--------+========+
-                //  |  0xd9  |YYYYYYYY|  data  |
-                //  +--------+--------+========+
-                return FromString(ReadTools.ReadString(lvByte, stream));
-            }
-            if (lvByte == 0xDE)
-            {
-                //    +--------+--------+--------+~~~~~~~~~~~~~~~~~+
-                //    |  0xde  |YYYYYYYY|YYYYYYYY|   N*2 objects   |
-                //    +--------+--------+--------+~~~~~~~~~~~~~~~~~+
-                var rawByte = new byte[2];
-                stream.Read(rawByte, 0, 2);
-                rawByte = BytesTools.SwapBytes(rawByte);
-                var len = BitConverter.ToInt16(rawByte, 0);
-
-                MPackMap map = new MPackMap();
-                for (int i = 0; i < len; i++)
-                {
-                    var key = ReadTools.ReadString(stream);
-                    var val = ParseStream(stream);
-                    map.Add(key, val);
-                }
-                return map;
-            }
-            if (lvByte == 0xDF)
-            {
-                //    +--------+--------+--------+--------+--------+~~~~~~~~~~~~~~~~~+
-                //    |  0xdf  |ZZZZZZZZ|ZZZZZZZZ|ZZZZZZZZ|ZZZZZZZZ|   N*2 objects   |
-                //    +--------+--------+--------+--------+--------+~~~~~~~~~~~~~~~~~+
-                var rawByte = new byte[4];
-                stream.Read(rawByte, 0, 4);
-                rawByte = BytesTools.SwapBytes(rawByte);
-                var len = BitConverter.ToInt32(rawByte, 0);
-
-                MPackMap map = new MPackMap();
-                for (int i = 0; i < len; i++)
-                {
-                    var key = ReadTools.ReadString(stream);
-                    var val = ParseStream(stream);
-                    map.Add(key, val);
-                }
-                return map;
-            }
-            if (lvByte == 0xDA)
-            {
-                //      str 16 stores a byte array whose length is upto (2^16)-1 bytes:
-                //      +--------+--------+--------+========+
-                //      |  0xda  |ZZZZZZZZ|ZZZZZZZZ|  data  |
-                //      +--------+--------+--------+========+
-                return FromString(ReadTools.ReadString(lvByte, stream));
-            }
-            if (lvByte == 0xDB)
-            {
-                //  str 32 stores a byte array whose length is upto (2^32)-1 bytes:
-                //  +--------+--------+--------+--------+--------+========+
-                //  |  0xdb  |AAAAAAAA|AAAAAAAA|AAAAAAAA|AAAAAAAA|  data  |
-                //  +--------+--------+--------+--------+--------+========+
-                return FromString(ReadTools.ReadString(lvByte, stream));
-            }
-            if (lvByte == 0xD0)
-            {
-                //      int 8 stores a 8-bit signed integer
-                //      +--------+--------+
-                //      |  0xd0  |ZZZZZZZZ|
-                //      +--------+--------+
-                return FromInteger((sbyte)stream.ReadByte());
-            }
-            if (lvByte == 0xD1)
-            {
-                //    int 16 stores a 16-bit big-endian signed integer
-                //    +--------+--------+--------+
-                //    |  0xd1  |ZZZZZZZZ|ZZZZZZZZ|
-                //    +--------+--------+--------+
-                var rawByte = new byte[2];
-                stream.Read(rawByte, 0, 2);
-                rawByte = BytesTools.SwapBytes(rawByte);
-                return FromInteger(BitConverter.ToInt16(rawByte, 0));
-            }
-            if (lvByte == 0xD2)
-            {
-                //  int 32 stores a 32-bit big-endian signed integer
-                //  +--------+--------+--------+--------+--------+
-                //  |  0xd2  |ZZZZZZZZ|ZZZZZZZZ|ZZZZZZZZ|ZZZZZZZZ|
-                //  +--------+--------+--------+--------+--------+
-                var rawByte = new byte[4];
-                stream.Read(rawByte, 0, 4);
-                rawByte = BytesTools.SwapBytes(rawByte);
-                return FromInteger(BitConverter.ToInt32(rawByte, 0));
-            }
-            if (lvByte == 0xD3)
-            {
-                //  int 64 stores a 64-bit big-endian signed integer
-                //  +--------+--------+--------+--------+--------+--------+--------+--------+--------+
-                //  |  0xd3  |ZZZZZZZZ|ZZZZZZZZ|ZZZZZZZZ|ZZZZZZZZ|ZZZZZZZZ|ZZZZZZZZ|ZZZZZZZZ|ZZZZZZZZ|
-                //  +--------+--------+--------+--------+--------+--------+--------+--------+--------+
-                var rawByte = new byte[8];
-                stream.Read(rawByte, 0, 8);
-                rawByte = BytesTools.SwapBytes(rawByte);
-                return FromInteger(BitConverter.ToInt64(rawByte, 0));
-            }
-
-            throw new ArgumentException("This stream does not contain MsgPack data.");
+            byte selector = (byte)stream.ReadByte();
+            return _lookup[selector].Read(selector, stream);
+        }
+        public static Task<MPack> ParseFromStreamAsync(Stream stream)
+        {
+            return ParseFromStreamAsync(stream, CancellationToken.None);
+        }
+        public static async Task<MPack> ParseFromStreamAsync(Stream stream, CancellationToken token)
+        {
+            byte selector = await stream.ReadByteAsync(token);
+            return await _lookup[selector].ReadAsync(selector, stream, token);
         }
 
         public static MPack Null()
@@ -432,6 +476,10 @@ namespace MsgPack
                 return (T)(object)Convert.ToBoolean(Value);
 
             //integers
+            if (code == TypeCode.Byte && ValueType == MsgPackType.Integer)
+                return (T)(object)Convert.ToByte(Value);
+            if (code == TypeCode.SByte && ValueType == MsgPackType.Integer)
+                return (T)(object)Convert.ToSByte(Value);
             if (code == TypeCode.Int16 && ValueType == MsgPackType.Integer)
                 return (T)(object)Convert.ToInt16(Value);
             if (code == TypeCode.UInt16 && ValueType == MsgPackType.Integer)
@@ -444,6 +492,8 @@ namespace MsgPack
                 return (T)(object)Convert.ToInt64(Value);
             if (code == TypeCode.UInt64 && ValueType == MsgPackType.UInt64)
                 return (T)(object)Convert.ToUInt64(Value);
+
+            //string
             if (code == TypeCode.String && ValueType == MsgPackType.String)
                 return (T)(object)Convert.ToString(Value);
 
@@ -462,20 +512,12 @@ namespace MsgPack
             if (code == TypeCode.DateTime && ValueType == MsgPackType.DateTime || ValueType == MsgPackType.Integer)
                 return (T)(object)new DateTime(Convert.ToInt64(Value));
 
-            if (code == TypeCode.Byte && ValueType == MsgPackType.Binary)
+            if (code == TypeCode.Char && ValueType == MsgPackType.Integer)
             {
-                byte[] tmp = (byte[])Value;
-                if (tmp.Length == 1)
-                    return (T)(object)tmp[0];
+                return (T)(object)(int)Value;
             }
-
-            if (code == TypeCode.Char && ValueType == MsgPackType.String)
-            {
-                string tmp = (string)Value;
-                if (tmp.Length == 1)
-                    return (T)(object)tmp[0];
-            }
-            throw new InvalidCastException($"This MPack object is not of type {typeof(T).Name}, and no valid cast was found.");
+            throw new InvalidCastException(
+                $"This MPack object is not of type {typeof(T).Name}, and no valid cast was found.");
         }
         public T ToOrDefault<T>()
         {
@@ -489,37 +531,61 @@ namespace MsgPack
             }
         }
 
-        public void EncodeToStream(Stream ms)
+        public void EncodeToStream(Stream stream)
+        {
+            EncodeToStreamInternal(stream);
+        }
+        public Task EncodeToStreamAsync(Stream stream)
+        {
+            return EncodeToStreamAsync(stream, CancellationToken.None);
+        }
+        public async Task EncodeToStreamAsync(Stream stream, CancellationToken token)
+        {
+            using (MemoryStream ms = new MemoryStream())
+            {
+                EncodeToStreamInternal(ms);
+                ms.Position = 0;
+                await ms.CopyToAsync(stream, 65535, token);
+            }
+        }
+        public byte[] EncodeToBytes()
+        {
+            MemoryStream ms = new MemoryStream();
+            EncodeToStreamInternal(ms);
+            return ms.ToArray();
+        }
+
+        private void EncodeToStreamInternal(Stream ms)
         {
             switch (ValueType)
             {
                 case MsgPackType.Unknown:
                 case MsgPackType.Null:
-                    WriteTools.WriteNull(ms);
+                    MPackExtensions.WriteNull(ms);
                     break;
                 case MsgPackType.String:
-                    WriteTools.WriteString(ms, Convert.ToString(Value));
+                    MPackExtensions.WriteString(ms, Convert.ToString(Value));
                     break;
                 case MsgPackType.Integer:
-                    WriteTools.WriteInteger(ms, Convert.ToInt64(Value));
+                    MPackExtensions.WriteInteger(ms, Convert.ToInt64(Value));
                     break;
                 case MsgPackType.UInt64:
-                    WriteTools.WriteUInt64(ms, Convert.ToUInt64(Value));
+                    MPackExtensions.WriteUInt64(ms, Convert.ToUInt64(Value));
                     break;
                 case MsgPackType.Boolean:
-                    WriteTools.WriteBoolean(ms, Convert.ToBoolean(Value));
+                    MPackExtensions.WriteBoolean(ms, Convert.ToBoolean(Value));
                     break;
                 case MsgPackType.Double:
-                    WriteTools.WriteFloat(ms, Convert.ToDouble(Value));
+                    MPackExtensions.WriteFloat(ms, Convert.ToDouble(Value));
                     break;
                 case MsgPackType.Single:
-                    WriteTools.WriteSingle(ms, Convert.ToSingle(Value));
+                    MPackExtensions.WriteSingle(ms, Convert.ToSingle(Value));
                     break;
                 case MsgPackType.DateTime:
-                    WriteTools.WriteInteger(ms, Convert.ToInt64(((DateTime)Value).Ticks));
+                    MPackExtensions.WriteInteger(ms, Convert.ToInt64(((DateTime)Value).Ticks));
                     break;
                 case MsgPackType.Binary:
-                    WriteTools.WriteBinary(ms, (byte[])Value);
+                    MPackExtensions.WriteBinary(ms, (byte[])Value);
                     break;
                 case MsgPackType.Map:
                     WriteMap(ms);
@@ -528,20 +594,10 @@ namespace MsgPack
                     WirteArray(ms);
                     break;
                 default:
-                    WriteTools.WriteNull(ms);
+                    MPackExtensions.WriteNull(ms);
                     break;
             }
         }
-        public byte[] EncodeToBytes()
-        {
-            MemoryStream ms = new MemoryStream();
-            EncodeToStream(ms);
-            byte[] r = new byte[ms.Length];
-            ms.Position = 0;
-            ms.Read(r, 0, (int)ms.Length);
-            return r;
-        }
-
         private void WriteMap(Stream stream)
         {
             MPackMap map = this as MPackMap;
@@ -561,21 +617,21 @@ namespace MsgPack
                 b = 0xDE;
                 stream.WriteByte(b);
 
-                lenBytes = BytesTools.SwapBytes(BitConverter.GetBytes((Int16)len));
+                lenBytes = MPackExtensions.SwapBytes(BitConverter.GetBytes((Int16)len));
                 stream.Write(lenBytes, 0, lenBytes.Length);
             }
             else
             {
                 b = 0xDF;
                 stream.WriteByte(b);
-                lenBytes = BytesTools.SwapBytes(BitConverter.GetBytes((Int32)len));
+                lenBytes = MPackExtensions.SwapBytes(BitConverter.GetBytes((Int32)len));
                 stream.Write(lenBytes, 0, lenBytes.Length);
             }
 
             foreach (var child in map)
             {
-                WriteTools.WriteString(stream, child.Key);
-                child.Value.EncodeToStream(stream);
+                MPackExtensions.WriteString(stream, child.Key);
+                child.Value.EncodeToStreamInternal(stream);
             }
         }
         private void WirteArray(Stream ms)
@@ -597,21 +653,21 @@ namespace MsgPack
                 b = 0xDC;
                 ms.WriteByte(b);
 
-                lenBytes = BytesTools.SwapBytes(BitConverter.GetBytes((Int16)len));
+                lenBytes = MPackExtensions.SwapBytes(BitConverter.GetBytes((Int16)len));
                 ms.Write(lenBytes, 0, lenBytes.Length);
             }
             else
             {
                 b = 0xDD;
                 ms.WriteByte(b);
-                lenBytes = BytesTools.SwapBytes(BitConverter.GetBytes((Int32)len));
+                lenBytes = MPackExtensions.SwapBytes(BitConverter.GetBytes((Int32)len));
                 ms.Write(lenBytes, 0, lenBytes.Length);
             }
 
 
             for (int i = 0; i < len; i++)
             {
-                list[i].EncodeToStream(ms);
+                list[i].EncodeToStreamInternal(ms);
             }
         }
 
@@ -656,320 +712,432 @@ namespace MsgPack
             return Value.ToString();
         }
 
-        private static class BytesTools
+        private class Reader
         {
-            private static readonly UTF8Encoding utf8Encode = new UTF8Encoding();
-            public static byte[] GetUtf8Bytes(string s)
-            {
+            private readonly Func<byte, Stream, MPack> _sync;
+            private readonly Func<byte, Stream, CancellationToken, Task<MPack>> _async;
 
-                return utf8Encode.GetBytes(s);
-            }
-            public static string GetString(byte[] utf8Bytes)
+            public Reader(Func<byte, Stream, MPack> sync, Func<byte, Stream, CancellationToken, Task<MPack>> async)
             {
-                return utf8Encode.GetString(utf8Bytes);
+                _sync = sync;
+                _async = async;
             }
-            public static byte[] SwapBytes(byte[] v)
+
+            public MPack Read(byte selector, Stream stream)
             {
-                byte[] r = new byte[v.Length];
-                int j = v.Length - 1;
-                for (int i = 0; i < r.Length; i++)
-                {
-                    r[i] = v[j];
-                    j--;
-                }
-                return r;
+                return _sync(selector, stream);
             }
-            public static byte[] SwapInt64(long v)
+            public Task<MPack> ReadAsync(byte selector, Stream stream, CancellationToken token)
             {
-                //byte[] r = new byte[8];
-                //r[7] = (byte)v;
-                //r[6] = (byte)(v >> 8);
-                //r[5] = (byte)(v >> 16);
-                //r[4] = (byte)(v >> 24);
-                //r[3] = (byte)(v >> 32);
-                //r[2] = (byte)(v >> 40);
-                //r[1] = (byte)(v >> 48);
-                //r[0] = (byte)(v >> 56);            
-                return SwapBytes(BitConverter.GetBytes(v));
-            }
-            public static byte[] SwapInt32(int v)
-            {
-                byte[] r = new byte[4];
-                r[3] = (byte)v;
-                r[2] = (byte)(v >> 8);
-                r[1] = (byte)(v >> 16);
-                r[0] = (byte)(v >> 24);
-                return r;
-            }
-            public static byte[] SwapInt16(Int16 v)
-            {
-                byte[] r = new byte[2];
-                r[1] = (byte)v;
-                r[0] = (byte)(v >> 8);
-                return r;
-            }
-            public static byte[] SwapDouble(double v)
-            {
-                return SwapBytes(BitConverter.GetBytes(v));
+                return _async(selector, stream, token);
             }
         }
-        private static class ReadTools
-        {
-            public static string ReadString(Stream ms, int len)
-            {
-                byte[] rawBytes = new byte[len];
-                ms.Read(rawBytes, 0, len);
-                return BytesTools.GetString(rawBytes);
-            }
-            public static string ReadString(Stream ms)
-            {
-                byte strFlag = (byte)ms.ReadByte();
-                return ReadString(strFlag, ms);
-            }
-            public static string ReadString(byte strFlag, Stream ms)
-            {
-                //
-                //fixstr stores a byte array whose length is upto 31 bytes:
-                //+--------+========+
-                //|101XXXXX|  data  |
-                //+--------+========+
-                //
-                //str 8 stores a byte array whose length is upto (2^8)-1 bytes:
-                //+--------+--------+========+
-                //|  0xd9  |YYYYYYYY|  data  |
-                //+--------+--------+========+
-                //
-                //str 16 stores a byte array whose length is upto (2^16)-1 bytes:
-                //+--------+--------+--------+========+
-                //|  0xda  |ZZZZZZZZ|ZZZZZZZZ|  data  |
-                //+--------+--------+--------+========+
-                //
-                //str 32 stores a byte array whose length is upto (2^32)-1 bytes:
-                //+--------+--------+--------+--------+--------+========+
-                //|  0xdb  |AAAAAAAA|AAAAAAAA|AAAAAAAA|AAAAAAAA|  data  |
-                //+--------+--------+--------+--------+--------+========+
-                //
-                //where
-                //* XXXXX is a 5-bit unsigned integer which represents N
-                //* YYYYYYYY is a 8-bit unsigned integer which represents N
-                //* ZZZZZZZZ_ZZZZZZZZ is a 16-bit big-endian unsigned integer which represents N
-                //* AAAAAAAA_AAAAAAAA_AAAAAAAA_AAAAAAAA is a 32-bit big-endian unsigned integer which represents N
-                //* N is the length of data   
 
-                byte[] rawBytes = null;
-                int len = 0;
-                if ((strFlag >= 0xA0) && (strFlag <= 0xBF))
+        private class ReaderLookup : Dictionary<byte, Reader>
+        {
+            public void AddRange(byte rangeStart, byte rangeEnd, Reader reader)
+            {
+                var test = Enumerable.Range(rangeStart, rangeEnd - rangeStart + 1).ToArray();
+                foreach (var b in test.Select(i => (byte)i))
                 {
-                    len = strFlag - 0xA0;
+                    this.Add(b, reader);
                 }
-                else if (strFlag == 0xD9)
-                {
-                    len = ms.ReadByte();
-                }
-                else if (strFlag == 0xDA)
-                {
-                    rawBytes = new byte[2];
-                    ms.Read(rawBytes, 0, 2);
-                    rawBytes = BytesTools.SwapBytes(rawBytes);
-                    len = BitConverter.ToInt16(rawBytes, 0);
-                }
-                else if (strFlag == 0xDB)
-                {
-                    rawBytes = new byte[4];
-                    ms.Read(rawBytes, 0, 4);
-                    rawBytes = BytesTools.SwapBytes(rawBytes);
-                    len = BitConverter.ToInt32(rawBytes, 0);
-                }
-                rawBytes = new byte[len];
-                ms.Read(rawBytes, 0, len);
-                return BytesTools.GetString(rawBytes);
+            }
+            public void AddRange(byte rangeStart, byte rangeEnd, Func<byte, Stream, MPack> sync,
+                Func<byte, Stream, CancellationToken, Task<MPack>> async)
+            {
+                AddRange(rangeStart, rangeEnd, new Reader(sync, async));
+            }
+            public void Add(byte key, Func<byte, Stream, MPack> sync,
+                Func<byte, Stream, CancellationToken, Task<MPack>> async)
+            {
+                Add(key, new Reader(sync, async));
             }
         }
-        private static class WriteTools
+    }
+
+    internal static class MPackExtensions
+    {
+        private const string EX_STREAMEND = "Stream ended but expecting more data. Data may be incorrupt or stream ended prematurely.";
+
+        public static string ReadString(Stream ms, int len)
         {
-            public static void WriteNull(Stream ms)
+            byte[] rawBytes = new byte[len];
+            ms.Read(rawBytes, 0, len);
+            return Encoding.UTF8.GetString(rawBytes);
+        }
+        public static string ReadString(Stream ms)
+        {
+            byte strFlag = (byte)ms.ReadByte();
+            return ReadString(strFlag, ms);
+        }
+        public static string ReadString(byte strFlag, Stream ms)
+        {
+            //
+            //fixstr stores a byte array whose length is upto 31 bytes:
+            //+--------+========+
+            //|101XXXXX|  data  |
+            //+--------+========+
+            //
+            //str 8 stores a byte array whose length is upto (2^8)-1 bytes:
+            //+--------+--------+========+
+            //|  0xd9  |YYYYYYYY|  data  |
+            //+--------+--------+========+
+            //
+            //str 16 stores a byte array whose length is upto (2^16)-1 bytes:
+            //+--------+--------+--------+========+
+            //|  0xda  |ZZZZZZZZ|ZZZZZZZZ|  data  |
+            //+--------+--------+--------+========+
+            //
+            //str 32 stores a byte array whose length is upto (2^32)-1 bytes:
+            //+--------+--------+--------+--------+--------+========+
+            //|  0xdb  |AAAAAAAA|AAAAAAAA|AAAAAAAA|AAAAAAAA|  data  |
+            //+--------+--------+--------+--------+--------+========+
+            //
+            //where
+            //* XXXXX is a 5-bit unsigned integer which represents N
+            //* YYYYYYYY is a 8-bit unsigned integer which represents N
+            //* ZZZZZZZZ_ZZZZZZZZ is a 16-bit big-endian unsigned integer which represents N
+            //* AAAAAAAA_AAAAAAAA_AAAAAAAA_AAAAAAAA is a 32-bit big-endian unsigned integer which represents N
+            //* N is the length of data   
+
+            byte[] rawBytes = null;
+            int len = 0;
+            if ((strFlag >= 0xA0) && (strFlag <= 0xBF))
             {
-                ms.WriteByte(0xC0);
+                len = strFlag - 0xA0;
             }
-            public static void WriteString(Stream ms, String strVal)
+            else if (strFlag == 0xD9)
             {
-                //
-                //fixstr stores a byte array whose length is upto 31 bytes:
-                //+--------+========+
-                //|101XXXXX|  data  |
-                //+--------+========+
-                //
-                //str 8 stores a byte array whose length is upto (2^8)-1 bytes:
-                //+--------+--------+========+
-                //|  0xd9  |YYYYYYYY|  data  |
-                //+--------+--------+========+
-                //
-                //str 16 stores a byte array whose length is upto (2^16)-1 bytes:
-                //+--------+--------+--------+========+
-                //|  0xda  |ZZZZZZZZ|ZZZZZZZZ|  data  |
-                //+--------+--------+--------+========+
-                //
-                //str 32 stores a byte array whose length is upto (2^32)-1 bytes:
-                //+--------+--------+--------+--------+--------+========+
-                //|  0xdb  |AAAAAAAA|AAAAAAAA|AAAAAAAA|AAAAAAAA|  data  |
-                //+--------+--------+--------+--------+--------+========+
-                //
-                //where
-                //* XXXXX is a 5-bit unsigned integer which represents N
-                //* YYYYYYYY is a 8-bit unsigned integer which represents N
-                //* ZZZZZZZZ_ZZZZZZZZ is a 16-bit big-endian unsigned integer which represents N
-                //* AAAAAAAA_AAAAAAAA_AAAAAAAA_AAAAAAAA is a 32-bit big-endian unsigned integer which represents N
-                //* N is the length of data
+                len = ms.ReadByte();
+            }
+            else if (strFlag == 0xDA)
+            {
+                rawBytes = new byte[2];
+                ms.Read(rawBytes, 0, 2);
+                rawBytes = SwapBytes(rawBytes);
+                len = BitConverter.ToInt16(rawBytes, 0);
+            }
+            else if (strFlag == 0xDB)
+            {
+                rawBytes = new byte[4];
+                ms.Read(rawBytes, 0, 4);
+                rawBytes = SwapBytes(rawBytes);
+                len = BitConverter.ToInt32(rawBytes, 0);
+            }
+            rawBytes = new byte[len];
+            ms.Read(rawBytes, 0, len);
+            return Encoding.UTF8.GetString(rawBytes);
+        }
+        public static async Task<string> ReadStringAsync(byte strFlag, Stream ms, CancellationToken token)
+        {
+            //
+            //fixstr stores a byte array whose length is upto 31 bytes:
+            //+--------+========+
+            //|101XXXXX|  data  |
+            //+--------+========+
+            //
+            //str 8 stores a byte array whose length is upto (2^8)-1 bytes:
+            //+--------+--------+========+
+            //|  0xd9  |YYYYYYYY|  data  |
+            //+--------+--------+========+
+            //
+            //str 16 stores a byte array whose length is upto (2^16)-1 bytes:
+            //+--------+--------+--------+========+
+            //|  0xda  |ZZZZZZZZ|ZZZZZZZZ|  data  |
+            //+--------+--------+--------+========+
+            //
+            //str 32 stores a byte array whose length is upto (2^32)-1 bytes:
+            //+--------+--------+--------+--------+--------+========+
+            //|  0xdb  |AAAAAAAA|AAAAAAAA|AAAAAAAA|AAAAAAAA|  data  |
+            //+--------+--------+--------+--------+--------+========+
+            //
+            //where
+            //* XXXXX is a 5-bit unsigned integer which represents N
+            //* YYYYYYYY is a 8-bit unsigned integer which represents N
+            //* ZZZZZZZZ_ZZZZZZZZ is a 16-bit big-endian unsigned integer which represents N
+            //* AAAAAAAA_AAAAAAAA_AAAAAAAA_AAAAAAAA is a 32-bit big-endian unsigned integer which represents N
+            //* N is the length of data   
+            byte[] rawBytes;
+            int len = 0;
+            if ((strFlag >= 0xA0) && (strFlag <= 0xBF))
+            {
+                len = strFlag - 0xA0;
+            }
+            else if (strFlag == 0xD9)
+            {
+                len = ms.ReadByte();
+            }
+            else if (strFlag == 0xDA)
+            {
+                rawBytes = await FillBufferAsync(ms, 2, token);
+                rawBytes = SwapBytes(rawBytes);
+                len = BitConverter.ToInt16(rawBytes, 0);
+            }
+            else if (strFlag == 0xDB)
+            {
+                rawBytes = await FillBufferAsync(ms, 4, token);
+                rawBytes = SwapBytes(rawBytes);
+                len = BitConverter.ToInt32(rawBytes, 0);
+            }
+            rawBytes = await FillBufferAsync(ms, len, token);
+            return Encoding.UTF8.GetString(rawBytes);
+        }
+        public static async Task<string> ReadStringAsync(Stream ms, CancellationToken token)
+        {
+            return await ReadStringAsync((await FillBufferAsync(ms, 1, token))[0], ms, token);
+        }
+        public static async Task<string> ReadStringAsync(Stream ms, int len, CancellationToken token)
+        {
+            return Encoding.UTF8.GetString(await FillBufferAsync(ms, len, token));
+        }
+        public static async Task<byte> ReadByteAsync(this Stream ms, CancellationToken token)
+        {
+            var buffer = await FillBufferAsync(ms, 1, token);
+            return buffer[0];
+        }
 
-                byte[] rawBytes = BytesTools.GetUtf8Bytes(strVal);
-                byte[] lenBytes = null;
-                int len = rawBytes.Length;
-                byte b = 0;
-                if (len <= 31)
-                {
-                    b = (byte)(0xA0 + (byte)len);
-                    ms.WriteByte(b);
-                }
-                else if (len <= 255)
-                {
-                    b = 0xD9;
-                    ms.WriteByte(b);
-                    b = (byte)len;
-                    ms.WriteByte(b);
-                }
-                else if (len <= 65535)
-                {
-                    b = 0xDA;
-                    ms.WriteByte(b);
+        public static void WriteNull(Stream ms)
+        {
+            ms.WriteByte(0xC0);
+        }
+        public static void WriteString(Stream ms, String strVal)
+        {
+            //
+            //fixstr stores a byte array whose length is upto 31 bytes:
+            //+--------+========+
+            //|101XXXXX|  data  |
+            //+--------+========+
+            //
+            //str 8 stores a byte array whose length is upto (2^8)-1 bytes:
+            //+--------+--------+========+
+            //|  0xd9  |YYYYYYYY|  data  |
+            //+--------+--------+========+
+            //
+            //str 16 stores a byte array whose length is upto (2^16)-1 bytes:
+            //+--------+--------+--------+========+
+            //|  0xda  |ZZZZZZZZ|ZZZZZZZZ|  data  |
+            //+--------+--------+--------+========+
+            //
+            //str 32 stores a byte array whose length is upto (2^32)-1 bytes:
+            //+--------+--------+--------+--------+--------+========+
+            //|  0xdb  |AAAAAAAA|AAAAAAAA|AAAAAAAA|AAAAAAAA|  data  |
+            //+--------+--------+--------+--------+--------+========+
+            //
+            //where
+            //* XXXXX is a 5-bit unsigned integer which represents N
+            //* YYYYYYYY is a 8-bit unsigned integer which represents N
+            //* ZZZZZZZZ_ZZZZZZZZ is a 16-bit big-endian unsigned integer which represents N
+            //* AAAAAAAA_AAAAAAAA_AAAAAAAA_AAAAAAAA is a 32-bit big-endian unsigned integer which represents N
+            //* N is the length of data
 
-                    lenBytes = BytesTools.SwapBytes(BitConverter.GetBytes((Int16)len));
-                    ms.Write(lenBytes, 0, lenBytes.Length);
+            byte[] rawBytes = Encoding.UTF8.GetBytes(strVal);
+            byte[] lenBytes = null;
+            int len = rawBytes.Length;
+            byte b = 0;
+            if (len <= 31)
+            {
+                b = (byte)(0xA0 + (byte)len);
+                ms.WriteByte(b);
+            }
+            else if (len <= 255)
+            {
+                b = 0xD9;
+                ms.WriteByte(b);
+                b = (byte)len;
+                ms.WriteByte(b);
+            }
+            else if (len <= 65535)
+            {
+                b = 0xDA;
+                ms.WriteByte(b);
+
+                lenBytes = MPackExtensions.SwapBytes(BitConverter.GetBytes((Int16)len));
+                ms.Write(lenBytes, 0, lenBytes.Length);
+            }
+            else
+            {
+                b = 0xDB;
+                ms.WriteByte(b);
+
+                lenBytes = MPackExtensions.SwapBytes(BitConverter.GetBytes((Int32)len));
+                ms.Write(lenBytes, 0, lenBytes.Length);
+            }
+            ms.Write(rawBytes, 0, rawBytes.Length);
+        }
+        public static void WriteBinary(Stream ms, byte[] rawBytes)
+        {
+
+            byte[] lenBytes = null;
+            int len = rawBytes.Length;
+            byte b = 0;
+            if (len <= 255)
+            {
+                b = 0xC4;
+                ms.WriteByte(b);
+                b = (byte)len;
+                ms.WriteByte(b);
+            }
+            else if (len <= 65535)
+            {
+                b = 0xC5;
+                ms.WriteByte(b);
+
+                lenBytes = MPackExtensions.SwapBytes(BitConverter.GetBytes((Int16)len));
+                ms.Write(lenBytes, 0, lenBytes.Length);
+            }
+            else
+            {
+                b = 0xC6;
+                ms.WriteByte(b);
+
+                lenBytes = MPackExtensions.SwapBytes(BitConverter.GetBytes((Int32)len));
+                ms.Write(lenBytes, 0, lenBytes.Length);
+            }
+            ms.Write(rawBytes, 0, rawBytes.Length);
+        }
+        public static void WriteFloat(Stream ms, Double fVal)
+        {
+            ms.WriteByte(0xCB);
+
+            ms.Write(BitConverter.GetBytes(fVal).SwapBytes(), 0, 8);
+        }
+        public static void WriteSingle(Stream ms, Single fVal)
+        {
+            ms.WriteByte(0xCA);
+            ms.Write(MPackExtensions.SwapBytes(BitConverter.GetBytes(fVal)), 0, 4);
+        }
+        public static void WriteBoolean(Stream ms, Boolean bVal)
+        {
+            if (bVal)
+            {
+                ms.WriteByte(0xC3);
+            }
+            else
+            {
+                ms.WriteByte(0xC2);
+            }
+        }
+        public static void WriteUInt64(Stream ms, UInt64 iVal)
+        {
+            ms.WriteByte(0xCF);
+            byte[] dataBytes = BitConverter.GetBytes(iVal);
+            ms.Write(MPackExtensions.SwapBytes(dataBytes), 0, 8);
+        }
+        public static void WriteInteger(Stream ms, Int64 iVal)
+        {
+            if (iVal >= 0)
+            {   // fixedval
+                if (iVal <= 127)
+                {
+                    ms.WriteByte((byte)iVal);
+                }
+                else if (iVal <= 255)
+                {  //UInt8
+                    ms.WriteByte(0xCC);
+                    ms.WriteByte((byte)iVal);
+                }
+                else if (iVal <= (UInt32)0xFFFF)
+                {  //UInt16
+                    ms.WriteByte(0xCD);
+                    ms.Write(BitConverter.GetBytes((Int16)iVal).SwapBytes(), 0, 2);
+                }
+                else if (iVal <= (UInt32)0xFFFFFFFF)
+                {  //UInt32
+                    ms.WriteByte(0xCE);
+                    ms.Write(BitConverter.GetBytes((Int32)iVal).SwapBytes(), 0, 4);
+                }
+                else
+                {  //Int64
+                    ms.WriteByte(0xD3);
+                    ms.Write(BitConverter.GetBytes(iVal).SwapBytes(), 0, 8);
+                }
+            }
+            else
+            {  // <0
+                if (iVal <= Int32.MinValue)  //-2147483648  // 64 bit
+                {
+                    ms.WriteByte(0xD3);
+                    ms.Write(BitConverter.GetBytes(iVal).SwapBytes(), 0, 8);
+                }
+                else if (iVal <= Int16.MinValue)   // -32768    // 32 bit
+                {
+                    ms.WriteByte(0xD2);
+                    ms.Write(BitConverter.GetBytes((Int32)iVal).SwapBytes(), 0, 4);
+                }
+                else if (iVal <= -128)   // -32768    // 32 bit
+                {
+                    ms.WriteByte(0xD1);
+                    ms.Write(BitConverter.GetBytes((Int16)iVal).SwapBytes(), 0, 2);
+                }
+                else if (iVal <= -32)
+                {
+                    ms.WriteByte(0xD0);
+                    ms.WriteByte((byte)iVal);
                 }
                 else
                 {
-                    b = 0xDB;
-                    ms.WriteByte(b);
+                    ms.WriteByte((byte)iVal);
+                }
+            }  // end <0
+        }
 
-                    lenBytes = BytesTools.SwapBytes(BitConverter.GetBytes((Int32)len));
-                    ms.Write(lenBytes, 0, lenBytes.Length);
-                }
-                ms.Write(rawBytes, 0, rawBytes.Length);
-            }
-            public static void WriteBinary(Stream ms, byte[] rawBytes)
+        public static byte[] SwapBytes(this byte[] v)
+        {
+            byte[] r = new byte[v.Length];
+            int j = v.Length - 1;
+            for (int i = 0; i < r.Length; i++)
             {
+                r[i] = v[j];
+                j--;
+            }
+            return r;
+        }
 
-                byte[] lenBytes = null;
-                int len = rawBytes.Length;
-                byte b = 0;
-                if (len <= 255)
-                {
-                    b = 0xC4;
-                    ms.WriteByte(b);
-                    b = (byte)len;
-                    ms.WriteByte(b);
-                }
-                else if (len <= 65535)
-                {
-                    b = 0xC5;
-                    ms.WriteByte(b);
+        public static byte[] FillBuffer(this Stream stream, int count)
+        {
+            byte[] buffer = new byte[count];
+            int read = FillBuffer_internal(stream, buffer, 0, count);
+            if (read != count)
+                throw new InvalidDataException(EX_STREAMEND);
+            return buffer;
+        }
+        private static int FillBuffer_internal(Stream stream, byte[] buffer, int offset, int length)
+        {
+            int totalRead = 0;
+            while (length > 0)
+            {
+                var read = stream.Read(buffer, offset, length);
+                if (read == 0)
+                    return totalRead;
+                offset += read;
+                length -= read;
+                totalRead += read;
+            }
+            return totalRead;
+        }
 
-                    lenBytes = BytesTools.SwapBytes(BitConverter.GetBytes((Int16)len));
-                    ms.Write(lenBytes, 0, lenBytes.Length);
-                }
-                else
-                {
-                    b = 0xC6;
-                    ms.WriteByte(b);
-
-                    lenBytes = BytesTools.SwapBytes(BitConverter.GetBytes((Int32)len));
-                    ms.Write(lenBytes, 0, lenBytes.Length);
-                }
-                ms.Write(rawBytes, 0, rawBytes.Length);
-            }
-            public static void WriteFloat(Stream ms, Double fVal)
+        public static async Task<byte[]> FillBufferAsync(this Stream stream, int count, CancellationToken token)
+        {
+            byte[] buffer = new byte[count];
+            int read = await FillBufferAsync_internal(stream, buffer, 0, count, token);
+            if (read != count)
+                throw new InvalidDataException(EX_STREAMEND);
+            return buffer;
+        }
+        private static async Task<int> FillBufferAsync_internal(Stream stream, byte[] buffer, int offset, int length, CancellationToken token)
+        {
+            int totalRead = 0;
+            while (length > 0 && !token.IsCancellationRequested)
             {
-                ms.WriteByte(0xCB);
-                ms.Write(BytesTools.SwapDouble(fVal), 0, 8);
+                var read = await stream.ReadAsync(buffer, offset, length, token);
+                if (read == 0)
+                    return totalRead;
+                offset += read;
+                length -= read;
+                totalRead += read;
             }
-            public static void WriteSingle(Stream ms, Single fVal)
-            {
-                ms.WriteByte(0xCA);
-                ms.Write(BytesTools.SwapBytes(BitConverter.GetBytes(fVal)), 0, 4);
-            }
-            public static void WriteBoolean(Stream ms, Boolean bVal)
-            {
-                if (bVal)
-                {
-                    ms.WriteByte(0xC3);
-                }
-                else
-                {
-                    ms.WriteByte(0xC2);
-                }
-            }
-            public static void WriteUInt64(Stream ms, UInt64 iVal)
-            {
-                ms.WriteByte(0xCF);
-                byte[] dataBytes = BitConverter.GetBytes(iVal);
-                ms.Write(BytesTools.SwapBytes(dataBytes), 0, 8);
-            }
-            public static void WriteInteger(Stream ms, Int64 iVal)
-            {
-                if (iVal >= 0)
-                {   // fixedval
-                    if (iVal <= 127)
-                    {
-                        ms.WriteByte((byte)iVal);
-                    }
-                    else if (iVal <= 255)
-                    {  //UInt8
-                        ms.WriteByte(0xCC);
-                        ms.WriteByte((byte)iVal);
-                    }
-                    else if (iVal <= (UInt32)0xFFFF)
-                    {  //UInt16
-                        ms.WriteByte(0xCD);
-                        ms.Write(BytesTools.SwapInt16((Int16)iVal), 0, 2);
-                    }
-                    else if (iVal <= (UInt32)0xFFFFFFFF)
-                    {  //UInt32
-                        ms.WriteByte(0xCE);
-                        ms.Write(BytesTools.SwapInt32((Int32)iVal), 0, 4);
-                    }
-                    else
-                    {  //Int64
-                        ms.WriteByte(0xD3);
-                        ms.Write(BytesTools.SwapInt64(iVal), 0, 8);
-                    }
-                }
-                else
-                {  // <0
-                    if (iVal <= Int32.MinValue)  //-2147483648  // 64 bit
-                    {
-                        ms.WriteByte(0xD3);
-                        ms.Write(BytesTools.SwapInt64(iVal), 0, 8);
-                    }
-                    else if (iVal <= Int16.MinValue)   // -32768    // 32 bit
-                    {
-                        ms.WriteByte(0xD2);
-                        ms.Write(BytesTools.SwapInt32((Int32)iVal), 0, 4);
-                    }
-                    else if (iVal <= -128)   // -32768    // 32 bit
-                    {
-                        ms.WriteByte(0xD1);
-                        ms.Write(BytesTools.SwapInt16((Int16)iVal), 0, 2);
-                    }
-                    else if (iVal <= -32)
-                    {
-                        ms.WriteByte(0xD0);
-                        ms.WriteByte((byte)iVal);
-                    }
-                    else
-                    {
-                        ms.WriteByte((byte)iVal);
-                    }
-                }  // end <0
-            }
+            return totalRead;
         }
     }
 

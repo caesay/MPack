@@ -23,14 +23,14 @@ namespace MsgPack.Tests
             };
             foreach (var value in tests)
             {
-                Assert.AreEqual(value, MPack.ParseBytes(MPack.FromDouble(value).EncodeToBytes()).To<double>());
+                Assert.AreEqual(value, MPack.ParseFromBytes(MPack.FromDouble(value).EncodeToBytes()).To<double>());
             }
         }
 
         [TestMethod]
         public void TestNull()
         {
-            Assert.AreEqual(null, MPack.ParseBytes(MPack.Null().EncodeToBytes()).To<object>());
+            Assert.AreEqual(null, MPack.ParseFromBytes(MPack.Null().EncodeToBytes()).To<object>());
         }
         [TestMethod]
         public void TestString()
@@ -45,7 +45,7 @@ namespace MsgPack.Tests
             };
             foreach (var value in tests)
             {
-                Assert.AreEqual(value, MPack.ParseBytes(MPack.FromString(value).EncodeToBytes()).To<string>());
+                Assert.AreEqual(value, MPack.ParseFromBytes(MPack.FromString(value).EncodeToBytes()).To<string>());
             }
         }
         [TestMethod]
@@ -61,7 +61,7 @@ namespace MsgPack.Tests
             };
             foreach (var value in tests)
             {
-                Assert.AreEqual((long)value, MPack.ParseBytes(MPack.FromInteger(value).EncodeToBytes()).To<long>());
+                Assert.AreEqual((long)value, MPack.ParseFromBytes(MPack.FromInteger(value).EncodeToBytes()).To<long>());
             }
         }
         [TestMethod]
@@ -85,7 +85,7 @@ namespace MsgPack.Tests
             };
 
             var bytes = dictionary.EncodeToBytes();
-            var result = MPack.ParseBytes(bytes) as MPackMap;
+            var result = MPack.ParseFromBytes(bytes) as MPackMap;
             Assert.AreEqual(dictionary, result);
         }
         [TestMethod]
@@ -106,7 +106,7 @@ namespace MsgPack.Tests
 
             var arr = new MPackArray(tests);
             var bytes = arr.EncodeToBytes();
-            var round = MPack.ParseBytes(bytes) as MPackArray;
+            var round = MPack.ParseFromBytes(bytes) as MPackArray;
 
             Assert.IsTrue(round != null);
             Assert.IsTrue(arr.Count == round.Count);
@@ -126,14 +126,14 @@ namespace MsgPack.Tests
             };
             foreach (var value in tests)
             {
-                Assert.AreEqual(value, MPack.ParseBytes(MPack.FromInteger(value).EncodeToBytes()).To<ulong>());
+                Assert.AreEqual(value, MPack.ParseFromBytes(MPack.FromInteger(value).EncodeToBytes()).To<ulong>());
             }
         }
         [TestMethod]
         public void TestBoolean()
         {
-            var tru = MPack.ParseBytes(MPack.FromBool(true).EncodeToBytes()).To<bool>();
-            var fal = MPack.ParseBytes(MPack.FromBool(false).EncodeToBytes()).To<bool>();
+            var tru = MPack.ParseFromBytes(MPack.FromBool(true).EncodeToBytes()).To<bool>();
+            var fal = MPack.ParseFromBytes(MPack.FromBool(false).EncodeToBytes()).To<bool>();
             Assert.IsTrue(tru);
             Assert.IsFalse(fal);
         }
@@ -153,14 +153,14 @@ namespace MsgPack.Tests
             };
             foreach (var value in tests)
             {
-                Assert.AreEqual(value, MPack.ParseBytes(MPack.FromSingle(value).EncodeToBytes()).To<float>());
+                Assert.AreEqual(value, MPack.ParseFromBytes(MPack.FromSingle(value).EncodeToBytes()).To<float>());
             }
         }
         [TestMethod]
         public void TestDateTime()
         {
             var now = DateTime.Now;
-            var result = MPack.ParseBytes(MPack.FromDateTime(now).EncodeToBytes());
+            var result = MPack.ParseFromBytes(MPack.FromDateTime(now).EncodeToBytes());
             var result_dt = result.To<DateTime>();
             Assert.AreEqual(now, result_dt);
 
@@ -181,7 +181,7 @@ namespace MsgPack.Tests
             };
             foreach (var value in tests)
             {
-                var result = MPack.ParseBytes(MPack.FromBytes(value).EncodeToBytes()).To<byte[]>();
+                var result = MPack.ParseFromBytes(MPack.FromBytes(value).EncodeToBytes()).To<byte[]>();
                 Assert.IsTrue(Enumerable.SequenceEqual(value, result));
             }
         }
