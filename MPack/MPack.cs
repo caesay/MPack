@@ -48,7 +48,7 @@ namespace MsgPack
 
     public class MPack : IEquatable<MPack>
     {
-        public virtual object Value => _value;
+        public virtual object Value { get { return _value; } }
         public virtual MsgPackType ValueType => _type;
 
         protected MPack(object value, MsgPackType type)
@@ -552,8 +552,7 @@ namespace MsgPack
             {
                 return (T)(object)(int)Value;
             }
-            throw new InvalidCastException(
-                $"This MPack object is not of type {typeof(T).Name}, and no valid cast was found.");
+            throw new InvalidCastException("This MPack object is not of type " + typeof(T).Name + ", and no valid cast was found.");
         }
         public T ToOrDefault<T>()
         {
@@ -1183,7 +1182,7 @@ namespace MsgPack
         {
             get { return _collection; }
         }
-        public override MsgPackType ValueType => MsgPackType.Array;
+        public override MsgPackType ValueType { get { return MsgPackType.Array; } }
         private IList<MPack> _collection = new List<MPack>();
 
         public MPackArray()
@@ -1257,13 +1256,15 @@ namespace MsgPack
 
     public class MPackMap : MPack, IDictionary<string, MPack>
     {
-        public int Count => _collection.Count;
-        public bool IsReadOnly => _collection.IsReadOnly;
+        public int Count { get { return _collection.Count; } }
+
+        public bool IsReadOnly { get { return _collection.IsReadOnly; } }
+
         public override object Value
         {
             get { return _collection; }
         }
-        public override MsgPackType ValueType => MsgPackType.Map;
+        public override MsgPackType ValueType { get { return MsgPackType.Map; } }
 
         private IDictionary<string, MPack> _collection;
 
