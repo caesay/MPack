@@ -390,6 +390,42 @@ namespace MsgPack
             });
         }
 
+        public MPack this[int index]
+        {
+            get
+            {
+                var array = this as MPackArray;
+                if (array == null)
+                    throw new InvalidOperationException("Can not use array indexor on mpack type: " + ValueType);
+                return array[index];
+            }
+            set
+            {
+                var array = this as MPackArray;
+                if (array == null)
+                    throw new InvalidOperationException("Can not use array indexor on mpack type: " + ValueType);
+                array[index] = value;
+            }
+        }
+        public MPack this[string key]
+        {
+            get
+            {
+                var map = this as MPackMap;
+                if (map == null)
+                    throw new InvalidOperationException("Can not use map indexor on mpack type: " + ValueType);
+                return map[key];
+            }
+            set
+            {
+                var map = this as MPackMap;
+                if (map == null)
+                    throw new InvalidOperationException("Can not use map indexor on mpack type: " + ValueType);
+                map[key] = value;
+
+            }
+        }
+
         public static MPack ParseFromBytes(byte[] array)
         {
             using (MemoryStream ms = new MemoryStream(array))
