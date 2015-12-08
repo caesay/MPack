@@ -49,7 +49,7 @@ namespace MsgPack
     public class MPack : IEquatable<MPack>
     {
         public virtual object Value { get { return _value; } }
-        public virtual MsgPackType ValueType => _type;
+        public virtual MsgPackType ValueType { get { return _type; } }
 
         protected MPack(object value, MsgPackType type)
         {
@@ -1332,7 +1332,7 @@ namespace MsgPack
             get { return _collection[key]; }
             set { _collection[key] = value; }
         }
-        public ICollection<string> Keys => _collection.Keys;
-        public ICollection<MPack> Values => _collection.Values;
+        public ICollection<string> Keys { get { return _collection.Keys; } }
+        public ICollection<MPack> Values { get { return _collection.Values; } }
     }
 }
