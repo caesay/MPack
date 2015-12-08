@@ -1,12 +1,21 @@
 MPack
 =====
 This library is a lightweight implementation of the [MessagePack](http://msgpack.org/) binary serialization format. MessagePack is a 1-to-1 binary representation of JSON, and the official specification can be found here: [https://github.com/msgpack...](https://github.com/msgpack/msgpack/blob/master/spec.md).
+[![Build status](https://ci.appveyor.com/api/projects/status/84jv0lllniqsicpb?svg=true)](https://ci.appveyor.com/project/caesay/mpack)
+
 
 Notes
 -----
 This library is contained in one file, with the designed purpose of being a drop-in file to your solution instead of being an added dependancy.
 
 Its easiest to understand how this library works if you think in terms of json. The type `MPackMap` represents a dictionary, and the type `MPackArray` represents an array. Everything else can be created with the `MPack` type static methods (such as `MPack.FromString(string)`).
+
+NuGet
+-----
+MPack is now available as a NuGet package!
+```
+PM> Install-Package MPack
+```
 
 Usage
 -----
