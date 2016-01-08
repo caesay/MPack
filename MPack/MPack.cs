@@ -161,24 +161,22 @@ namespace MsgPack
             // binary array, max 65535
             _lookup.Add(0xC5, (b, s) =>
             {
-                int len = BitConverter.ToInt16(s.FillBuffer(2).SwapBytes(), 0);
+                int len = BitConverter.ToUInt16(s.FillBuffer(2).SwapBytes(), 0);
                 return FromBytes(s.FillBuffer(len));
             }, async (b, s, c) =>
             {
-                int len = BitConverter.ToInt16((await s.FillBufferAsync(2, c))
-                    .SwapBytes(), 0);
+                int len = BitConverter.ToUInt16((await s.FillBufferAsync(2, c)).SwapBytes(), 0);
                 return FromBytes(await s.FillBufferAsync(len, c));
             });
 
             // binary max: 2^32-1                
             _lookup.Add(0xC6, (b, s) =>
             {
-                int len = BitConverter.ToInt32(s.FillBuffer(4).SwapBytes(), 0);
+                long len = BitConverter.ToUInt32(s.FillBuffer(4).SwapBytes(), 0);
                 return FromBytes(s.FillBuffer(len));
             }, async (b, s, c) =>
             {
-                int len = BitConverter.ToInt32((await s.FillBufferAsync(4, c))
-                    .SwapBytes(), 0);
+                long len = BitConverter.ToUInt32((await s.FillBufferAsync(4, c)).SwapBytes(), 0);
                 return FromBytes(await s.FillBufferAsync(len, c));
             });
 
@@ -247,10 +245,10 @@ namespace MsgPack
                 return FromInteger(v);
             });
 
-            // array (int16 length)
+            // array (uint16 length)
             _lookup.Add(0xDC, (b, s) =>
             {
-                int len = BitConverter.ToInt16(s.FillBuffer(2).SwapBytes(), 0);
+                int len = BitConverter.ToUInt16(s.FillBuffer(2).SwapBytes(), 0);
                 MPackArray array = new MPackArray();
                 for (int i = 0; i < len; i++)
                 {
@@ -259,7 +257,7 @@ namespace MsgPack
                 return array;
             }, async (b, s, c) =>
             {
-                int len = BitConverter.ToInt16((await s.FillBufferAsync(2, c))
+                int len = BitConverter.ToUInt16((await s.FillBufferAsync(2, c))
                     .SwapBytes(), 0);
                 MPackArray array = new MPackArray();
                 for (int i = 0; i < len; i++)
@@ -269,32 +267,32 @@ namespace MsgPack
                 return array;
             });
 
-            // array (int32 length)
+            // array (uint32 length)
             _lookup.Add(0xDD, (b, s) =>
             {
-                int len = BitConverter.ToInt32(s.FillBuffer(4).SwapBytes(), 0);
+                uint len = BitConverter.ToUInt32(s.FillBuffer(4).SwapBytes(), 0);
                 MPackArray array = new MPackArray();
-                for (int i = 0; i < len; i++)
+                for (uint i = 0; i < len; i++)
                 {
                     array.Add(ParseFromStream(s));
                 }
                 return array;
             }, async (b, s, c) =>
             {
-                int len = BitConverter.ToInt32((await s.FillBufferAsync(4, c))
+                uint len = BitConverter.ToUInt32((await s.FillBufferAsync(4, c))
                     .SwapBytes(), 0);
                 MPackArray array = new MPackArray();
-                for (int i = 0; i < len; i++)
+                for (uint i = 0; i < len; i++)
                 {
                     array.Add(await ParseFromStreamAsync(s, c));
                 }
                 return array;
             });
 
-            // map (int16 length)
+            // map (uint16 length)
             _lookup.Add(0xDE, (b, s) =>
             {
-                int len = BitConverter.ToInt16(s.FillBuffer(2).SwapBytes(), 0);
+                int len = BitConverter.ToUInt16(s.FillBuffer(2).SwapBytes(), 0);
                 MPackMap map = new MPackMap();
                 for (int i = 0; i < len; i++)
                 {
@@ -305,7 +303,7 @@ namespace MsgPack
                 return map;
             }, async (b, s, c) =>
             {
-                int len = BitConverter.ToInt16((await s.FillBufferAsync(2, c))
+                int len = BitConverter.ToUInt16((await s.FillBufferAsync(2, c))
                     .SwapBytes(), 0);
                 MPackMap map = new MPackMap();
                 for (int i = 0; i < len; i++)
@@ -317,12 +315,12 @@ namespace MsgPack
                 return map;
             });
 
-            // map (int32 length)
+            // map (uint32 length)
             _lookup.Add(0xDF, (b, s) =>
             {
-                int len = BitConverter.ToInt32(s.FillBuffer(4).SwapBytes(), 0);
+                uint len = BitConverter.ToUInt32(s.FillBuffer(4).SwapBytes(), 0);
                 MPackMap map = new MPackMap();
-                for (int i = 0; i < len; i++)
+                for (uint i = 0; i < len; i++)
                 {
                     var key = MPackExtensions.ReadString(s);
                     var val = ParseFromStream(s);
@@ -331,10 +329,10 @@ namespace MsgPack
                 return map;
             }, async (b, s, c) =>
             {
-                int len = BitConverter.ToInt32((await s.FillBufferAsync(4, c))
+                uint len = BitConverter.ToUInt32((await s.FillBufferAsync(4, c))
                     .SwapBytes(), 0);
                 MPackMap map = new MPackMap();
-                for (int i = 0; i < len; i++)
+                for (uint i = 0; i < len; i++)
                 {
                     var key = await MPackExtensions.ReadStringAsync(s, c);
                     var val = await ParseFromStreamAsync(s, c);
@@ -365,7 +363,7 @@ namespace MsgPack
                 return FromInteger(v);
             });
 
-            // int32    xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx  
+            // int32    0xD2 xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx  
             _lookup.Add(0xD2, (b, s) =>
             {
                 var v = BitConverter.ToInt32(s.FillBuffer(4).SwapBytes(), 0);
@@ -377,7 +375,7 @@ namespace MsgPack
                 return FromInteger(v);
             });
 
-            // int64      xxxxxxxx (x4)
+            // int64      0xD3 xxxxxxxx (x8)
             _lookup.Add(0xD3, (b, s) =>
             {
                 var v = BitConverter.ToInt64(s.FillBuffer(8).SwapBytes(), 0);
@@ -498,6 +496,50 @@ namespace MsgPack
         {
             return new MPackMap(value);
         }
+        public static MPack From<T>(T value)
+        {
+            return From(typeof(T), value);
+        }
+        public static MPack From(Type type, object value)
+        {
+            if (type == typeof(byte[]))
+                return FromBytes((byte[])value);
+            TypeCode code = Type.GetTypeCode(type);
+            switch (code)
+            {
+                case TypeCode.Boolean:
+                    return new MPack(value, MsgPackType.Boolean);
+                case TypeCode.Char:
+                    return new MPack(value, MsgPackType.Integer);
+                case TypeCode.SByte:
+                    return new MPack(value, MsgPackType.Integer);
+                case TypeCode.Byte:
+                    return new MPack(value, MsgPackType.Integer);
+                case TypeCode.Int16:
+                    return new MPack(value, MsgPackType.Integer);
+                case TypeCode.UInt16:
+                    return new MPack(value, MsgPackType.Integer);
+                case TypeCode.Int32:
+                    return new MPack(value, MsgPackType.Integer);
+                case TypeCode.UInt32:
+                    return new MPack(value, MsgPackType.Integer);
+                case TypeCode.Int64:
+                    return new MPack(value, MsgPackType.Integer);
+                case TypeCode.UInt64:
+                    return new MPack(value, MsgPackType.UInt64);
+                case TypeCode.Single:
+                    return new MPack(value, MsgPackType.Single);
+                case TypeCode.Double:
+                    return new MPack(value, MsgPackType.Double);
+                case TypeCode.Decimal:
+                    return new MPack(value, MsgPackType.Double);
+                case TypeCode.DateTime:
+                    return new MPack(value, MsgPackType.DateTime);
+                case TypeCode.String:
+                    return new MPack(value, MsgPackType.String);
+            }
+            throw new NotSupportedException("Tried to create MPack object from unsupported type: " + type.Name);
+        }
 
         public T To<T>()
         {
@@ -565,6 +607,7 @@ namespace MsgPack
                 return default(T);
             }
         }
+
 
         public void EncodeToStream(Stream stream)
         {
@@ -986,16 +1029,14 @@ namespace MsgPack
             {
                 b = 0xDA;
                 ms.WriteByte(b);
-
-                lenBytes = MPackExtensions.SwapBytes(BitConverter.GetBytes((Int16)len));
+                lenBytes = MPackExtensions.SwapBytes(BitConverter.GetBytes(Convert.ToUInt16(len)));
                 ms.Write(lenBytes, 0, lenBytes.Length);
             }
             else
             {
                 b = 0xDB;
                 ms.WriteByte(b);
-
-                lenBytes = MPackExtensions.SwapBytes(BitConverter.GetBytes((Int32)len));
+                lenBytes = MPackExtensions.SwapBytes(BitConverter.GetBytes(Convert.ToUInt32(len)));
                 ms.Write(lenBytes, 0, lenBytes.Length);
             }
             ms.Write(rawBytes, 0, rawBytes.Length);
@@ -1018,7 +1059,7 @@ namespace MsgPack
                 b = 0xC5;
                 ms.WriteByte(b);
 
-                lenBytes = MPackExtensions.SwapBytes(BitConverter.GetBytes((Int16)len));
+                lenBytes = MPackExtensions.SwapBytes(BitConverter.GetBytes(Convert.ToUInt16(len)));
                 ms.Write(lenBytes, 0, lenBytes.Length);
             }
             else
@@ -1026,7 +1067,7 @@ namespace MsgPack
                 b = 0xC6;
                 ms.WriteByte(b);
 
-                lenBytes = MPackExtensions.SwapBytes(BitConverter.GetBytes((Int32)len));
+                lenBytes = MPackExtensions.SwapBytes(BitConverter.GetBytes(Convert.ToUInt32(len)));
                 ms.Write(lenBytes, 0, lenBytes.Length);
             }
             ms.Write(rawBytes, 0, rawBytes.Length);
@@ -1129,10 +1170,19 @@ namespace MsgPack
             return r;
         }
 
-        public static byte[] FillBuffer(this Stream stream, int count)
+        public static byte[] FillBuffer(this Stream stream, long count)
         {
             byte[] buffer = new byte[count];
-            int read = FillBuffer_internal(stream, buffer, 0, count);
+            int index = 0;
+            int read = 0;
+            if (count > int.MaxValue)
+            {
+                read = FillBuffer_internal(stream, buffer, 0, int.MaxValue);
+                if (read != int.MaxValue)
+                    throw new InvalidDataException(EX_STREAMEND);
+                index = int.MaxValue;
+            }
+            read += FillBuffer_internal(stream, buffer, index, (int)(count - read));
             if (read != count)
                 throw new InvalidDataException(EX_STREAMEND);
             return buffer;
@@ -1152,10 +1202,19 @@ namespace MsgPack
             return totalRead;
         }
 
-        public static async Task<byte[]> FillBufferAsync(this Stream stream, int count, CancellationToken token)
+        public static async Task<byte[]> FillBufferAsync(this Stream stream, long count, CancellationToken token)
         {
             byte[] buffer = new byte[count];
-            int read = await FillBufferAsync_internal(stream, buffer, 0, count, token);
+            int index = 0;
+            int read = 0;
+            if (count > int.MaxValue)
+            {
+                read = await FillBufferAsync_internal(stream, buffer, 0, int.MaxValue, token);
+                if (read != int.MaxValue)
+                    throw new InvalidDataException(EX_STREAMEND);
+                index = int.MaxValue;
+            }
+            read += await FillBufferAsync_internal(stream, buffer, index, (int)(count - read), token);
             if (read != count)
                 throw new InvalidDataException(EX_STREAMEND);
             return buffer;
@@ -1252,6 +1311,11 @@ namespace MsgPack
         {
             return _collection.GetEnumerator();
         }
+
+        public override string ToString()
+        {
+            return String.Join(",", this.Select(v => v.ToString()));
+        }
     }
 
     public class MPackMap : MPack, IDictionary<string, MPack>
@@ -1270,15 +1334,15 @@ namespace MsgPack
 
         public MPackMap()
         {
-            _collection = new Dictionary<string, MPack>();
+            _collection = new Dictionary<string, MPack>(StringComparer.InvariantCultureIgnoreCase);
         }
         public MPackMap(IDictionary<string, MPack> seed)
         {
-            _collection = seed;
+            _collection = new Dictionary<string, MPack>(seed, StringComparer.InvariantCultureIgnoreCase);
         }
         public MPackMap(IEnumerable<KeyValuePair<string, MPack>> seed)
         {
-            _collection = new Dictionary<string, MPack>();
+            _collection = new Dictionary<string, MPack>(StringComparer.InvariantCultureIgnoreCase);
             foreach (var v in seed)
                 _collection.Add(v);
         }
@@ -1315,6 +1379,11 @@ namespace MsgPack
         {
             return _collection.ContainsKey(key);
         }
+
+        public bool ContainsKeys(IEnumerable<string> keys)
+        {
+            return keys.All(ContainsKey);
+        }
         public void Add(string key, MPack value)
         {
             _collection.Add(key, value);
@@ -1334,5 +1403,10 @@ namespace MsgPack
         }
         public ICollection<string> Keys { get { return _collection.Keys; } }
         public ICollection<MPack> Values { get { return _collection.Values; } }
+
+        public override string ToString()
+        {
+            return String.Join(",", this.Select(kvp => kvp.Key + ":" + kvp.Value.ToString()));
+        }
     }
 }
