@@ -787,6 +787,8 @@ namespace MsgPack
         }
         public override string ToString()
         {
+            if(Value == null)
+                return "null";
             return Value.ToString();
         }
 
