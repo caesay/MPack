@@ -669,7 +669,7 @@ namespace MsgPack
                     WriteMap(ms);
                     break;
                 case MsgPackType.Array:
-                    WirteArray(ms);
+                    WriteArray(ms);
                     break;
                 default:
                     MPackExtensions.WriteNull(ms);
@@ -712,11 +712,11 @@ namespace MsgPack
                 child.Value.EncodeToStreamInternal(stream);
             }
         }
-        private void WirteArray(Stream ms)
+        private void WriteArray(Stream ms)
         {
             MPackArray list = this as MPackArray;
             if (list == null)
-                throw new InvalidOperationException("A call to WirteArray can not occur unless type is of MsgPackArray");
+                throw new InvalidOperationException("A call to WriteArray can not occur unless type is of MsgPackArray");
 
             byte b;
             byte[] lenBytes;
