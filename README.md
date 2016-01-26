@@ -6,13 +6,15 @@ This library is a lightweight implementation of the [MessagePack](http://msgpack
 
 Notes
 -----
-This library is contained in one file, with the designed purpose of being a drop-in file to your solution instead of being an added dependancy.
-
-Its easiest to understand how this library works if you think in terms of json. The type `MPackMap` represents a dictionary, and the type `MPackArray` represents an array. Everything else can be created with the `MPack` type static methods (such as `MPack.FromString(string)`).
+* This library is designed to be super light weight.
+* Its easiest to understand how this library works if you think in terms of json. The type `MPackMap` represents a dictionary, and the type `MPackArray` represents an array. 
+* Create MPack instances with the static method `MPack.From(object);`. You can pass any simple type (such as string, integer, etc), or any Array composed of a simple type. MPack also has implicit conversions from most of the basic types built in.
+* Transform an MPack object back into a CLR type with the static method `MPack.To<T>();` or MPack.To(type);. MPack also has **explicit** converions going back to most basic types, you can do `string str = (string)mpack;` for instance.
+* MPack now supports native asynchrounous reading and cancellation tokens. It will *not* block a thread to wait on a stream.
 
 NuGet
 -----
-MPack is now available as a NuGet package!
+MPack is available as a NuGet package!
 ```
 PM> Install-Package MPack
 ```
@@ -24,18 +26,18 @@ Create a object model that can be represented as MsgPack. Here we are creating a
 MPackMap dictionary = new MPackMap
 {
     {
-        "array1", MPack.FromArray(new[]
+        "array1", MPack.From(new[]
         {
-            MPack.FromString("array1_value1"),
-            MPack.FromString("array1_value2"),
+            "array1_value1",  // implicitly converted string
+            MPack.From("array1_value2"),
             MPack.FromString("array1_value3"),
         })
     },
-    {"bool1", MPack.FromBool(true)},
-    {"double1", MPack.FromDouble(50.5)},
-    {"double2", MPack.FromDouble(15.2)},
-    {"int1", MPack.FromInteger(50505)},
-    {"int2", MPack.FromInteger(50)}
+    {"bool1", MPack.From(true)}, //boolean
+    {"double1", MPack.From(50.5)}, //single-precision float
+    {"double2", MPack.From(15.2)},
+    {"int1", 50505}, // implicitly converted integer
+    {"int2", MPack.From(50)} // integer
 };
 ```
 Serialize the data to a byte array or to a stream to be saved, transmitted, etc:
@@ -44,11 +46,11 @@ byte[] encodedBytes = dictionary.EncodeToBytes();
 // -- or --
 dictionary.EncodeToStream(stream);
 ```
-Parse the binary data back into a MPack object model:
+Parse the binary data back into a MPack object model (you can also cast back to an MPackMap or MPackArray after reading if you want dictionary/array methods):
 ```csharp
-var reconstructed = MPack.ParseFromBytes(encodedBytes) as MPackMap;
+var reconstructed = MPack.ParseFromBytes(encodedBytes);
 // -- or --
-var reconstructed = MPack.ParseFromStream(stream) as MPackMap;
+var reconstructed = MPack.ParseFromStream(stream);
 ```
 Turn MPack objects back into types that we understand with the generic `To<>()` method. Since we know the types of everything here we can just call `To<bool>()` to reconstruct our bool, but if you don't know you can access the instance enum `MPack.ValueType` to know what kind of value it is:
 ```csharp
@@ -63,6 +65,6 @@ Credits
 -------
 The following people/projects have made this possible:
 
-0. Me, obviously :) (caelantsayler]at[gmail]dot[com)
-0. ymofen (ymofen]at[diocp]dot[org) for his work on https://github.com/ymofen/SimpleMsgPack.Net
-0. All of the people that make MessagePack happen https://github.com/msgpack
+0. Me: [caelantsayler]at[gmail]dot[com]
+0. Jon Skeet: I borrowed a Big Endian BitConverter implementation from his misc util library here http://jonskeet.uk/csharp/miscutil/
+0. All of the people that make MessagePack happen: https://github.com/msgpack

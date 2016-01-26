@@ -28,573 +28,157 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace MsgPack
+namespace CS
 {
-    public enum MsgPackType
-    {
-        Unknown = 0,
-        Null = 1,
-        Map = 2,
-        Array = 3,
-        String = 4,
-        Integer = 5,
-        UInt64 = 6,
-        Boolean = 7,
-        Double = 8,
-        Single = 9,
-        DateTime = 10,
-        Binary = 11
-    }
-
-    public class MPack : IEquatable<MPack>
+    public class MPack : IEquatable<MPack>, IConvertible
     {
         public virtual object Value { get { return _value; } }
-        public virtual MsgPackType ValueType { get { return _type; } }
+        public virtual MPackType ValueType { get { return _type; } }
 
-        protected MPack(object value, MsgPackType type)
+        internal MPack(object value, MPackType type)
         {
             _value = value;
             _type = type;
         }
-
         protected MPack()
         {
         }
 
-        private object _value;
-        private MsgPackType _type = MsgPackType.Unknown;
-        private static readonly ReaderLookup _lookup = new ReaderLookup();
+        private object _value = null;
+        private MPackType _type = MPackType.Null;
 
-        static MPack()
-        {
-            //positive fixint	0xxxxxxx	0x00 - 0x7f
-            _lookup.AddRange(0, 0x7F,
-                (b, s) => FromInteger(b),
-                (b, s, c) => Task.FromResult(FromInteger(b)));
-
-            //positive fixint	0xxxxxxx	0x00 - 0x7f
-            _lookup.AddRange(0x80, 0x8F, (b, s) =>
-            {
-                MPackMap map = new MPackMap();
-                int len = b - 0x80;
-                for (int i = 0; i < len; i++)
-                {
-                    map.Add(MPackExtensions.ReadString(s), ParseFromStream(s));
-                }
-                return map;
-            }, async (b, s, c) =>
-            {
-                MPackMap map = new MPackMap();
-                int len = b - 0x80;
-                for (int i = 0; i < len; i++)
-                {
-                    map.Add(await MPackExtensions.ReadStringAsync(s, c), await ParseFromStreamAsync(s, c));
-                }
-                return map;
-            });
-
-            //fixarray	1001xxxx	0x90 - 0x9f
-            _lookup.AddRange(0x90, 0x9f, (b, s) =>
-            {
-                MPackArray array = new MPackArray();
-                int len = b - 0x90;
-                for (int i = 0; i < len; i++)
-                {
-                    array.Add(ParseFromStream(s));
-                }
-                return array;
-            }, async (b, s, c) =>
-            {
-                MPackArray array = new MPackArray();
-                int len = b - 0x90;
-                for (int i = 0; i < len; i++)
-                {
-                    array.Add(await ParseFromStreamAsync(s, c));
-                }
-                return array;
-            });
-
-            // fixstr	101xxxxx	0xa0 - 0xbf
-            _lookup.AddRange(0xA0, 0xBF, (b, s) =>
-            {
-                int len = b - 0xA0;
-                return FromString(MPackExtensions.ReadString(s, len));
-            }, async (b, s, c) =>
-            {
-                int len = b - 0xA0;
-                return FromString(await MPackExtensions.ReadStringAsync(s, len, c));
-            });
-
-            // negative fixnum stores 5-bit negative integer 111xxxxx
-            _lookup.AddRange(0xE0, 0xFF,
-                (b, s) => FromInteger((sbyte)b),
-                (b, s, c) => Task.FromResult(FromInteger((sbyte)b)));
-
-            // null
-            _lookup.Add(0xC0,
-                (b, s) => Null(),
-                (b, s, c) => Task.FromResult(Null()));
-
-            // note, no 0xC1, it's not used.
-
-            // bool: false
-            _lookup.Add(0xC2,
-                (b, s) => FromBool(false),
-                (b, s, c) => Task.FromResult(FromBool(false)));
-
-            // bool: true
-            _lookup.Add(0xC3,
-                (b, s) => FromBool(true),
-                (b, s, c) => Task.FromResult(FromBool(true)));
-
-            // binary array, max 255
-            _lookup.Add(0xC4, (b, s) =>
-            {
-                int len = s.ReadByte();
-                return FromBytes(s.FillBuffer(len));
-            }, async (b, s, c) =>
-            {
-                int len = await s.ReadByteAsync(c);
-                return FromBytes(await s.FillBufferAsync(len, c));
-            });
-
-            // binary array, max 65535
-            _lookup.Add(0xC5, (b, s) =>
-            {
-                int len = BitConverter.ToUInt16(s.FillBuffer(2).SwapBytes(), 0);
-                return FromBytes(s.FillBuffer(len));
-            }, async (b, s, c) =>
-            {
-                int len = BitConverter.ToUInt16((await s.FillBufferAsync(2, c)).SwapBytes(), 0);
-                return FromBytes(await s.FillBufferAsync(len, c));
-            });
-
-            // binary max: 2^32-1                
-            _lookup.Add(0xC6, (b, s) =>
-            {
-                long len = BitConverter.ToUInt32(s.FillBuffer(4).SwapBytes(), 0);
-                return FromBytes(s.FillBuffer(len));
-            }, async (b, s, c) =>
-            {
-                long len = BitConverter.ToUInt32((await s.FillBufferAsync(4, c)).SwapBytes(), 0);
-                return FromBytes(await s.FillBufferAsync(len, c));
-            });
-
-            // note 0xC7, 0xC8, 0xC9, not used.
-
-            // float 32 stores a floating point number in IEEE 754 single precision floating point number     
-            _lookup.Add(0xCA, (b, s) =>
-            {
-                var raw = s.FillBuffer(4).SwapBytes();
-                return FromSingle(BitConverter.ToSingle(raw, 0));
-            }, async (b, s, c) =>
-            {
-                var raw = (await s.FillBufferAsync(4, c)).SwapBytes();
-                return FromSingle(BitConverter.ToSingle(raw, 0));
-            });
-
-            // float 64 stores a floating point number in IEEE 754 double precision floating point number        
-            _lookup.Add(0xCB, (b, s) =>
-            {
-                var raw = s.FillBuffer(8).SwapBytes();
-                return FromDouble(BitConverter.ToDouble(raw, 0));
-            }, async (b, s, c) =>
-            {
-                var raw = (await s.FillBufferAsync(8, c)).SwapBytes();
-                return FromDouble(BitConverter.ToDouble(raw, 0));
-            });
-
-            // uint8   0xcc   xxxxxxxx
-            _lookup.Add(0xCC,
-                (b, s) => FromInteger((byte)s.ReadByte()),
-                async (b, s, c) => FromInteger((byte)await s.ReadByteAsync(c)));
-
-            // uint16   0xcd xxxxxxxx xxxxxxxx   
-            _lookup.Add(0xCD, (b, s) =>
-            {
-                var v = BitConverter.ToUInt16(s.FillBuffer(2).SwapBytes(), 0);
-                return FromInteger(v);
-            }, async (b, s, c) =>
-            {
-                var v = BitConverter.ToUInt16((await s.FillBufferAsync(2, c))
-                    .SwapBytes(), 0);
-                return FromInteger(v);
-            });
-
-            // uint32   0xce xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx  
-            _lookup.Add(0xCE, (b, s) =>
-            {
-                var v = BitConverter.ToUInt32(s.FillBuffer(4).SwapBytes(), 0);
-                return FromInteger(v);
-            }, async (b, s, c) =>
-            {
-                var v = BitConverter.ToUInt32((await s.FillBufferAsync(4, c))
-                    .SwapBytes(), 0);
-                return FromInteger(v);
-            });
-
-            // uint64   0xcF   xxxxxxxx (x4)
-            _lookup.Add(0xCF, (b, s) =>
-            {
-                var v = BitConverter.ToUInt64(s.FillBuffer(8).SwapBytes(), 0);
-                return FromInteger(v);
-            }, async (b, s, c) =>
-            {
-                var v = BitConverter.ToUInt64((await s.FillBufferAsync(8, c))
-                    .SwapBytes(), 0);
-                return FromInteger(v);
-            });
-
-            // array (uint16 length)
-            _lookup.Add(0xDC, (b, s) =>
-            {
-                int len = BitConverter.ToUInt16(s.FillBuffer(2).SwapBytes(), 0);
-                MPackArray array = new MPackArray();
-                for (int i = 0; i < len; i++)
-                {
-                    array.Add(ParseFromStream(s));
-                }
-                return array;
-            }, async (b, s, c) =>
-            {
-                int len = BitConverter.ToUInt16((await s.FillBufferAsync(2, c))
-                    .SwapBytes(), 0);
-                MPackArray array = new MPackArray();
-                for (int i = 0; i < len; i++)
-                {
-                    array.Add(await ParseFromStreamAsync(s, c));
-                }
-                return array;
-            });
-
-            // array (uint32 length)
-            _lookup.Add(0xDD, (b, s) =>
-            {
-                uint len = BitConverter.ToUInt32(s.FillBuffer(4).SwapBytes(), 0);
-                MPackArray array = new MPackArray();
-                for (uint i = 0; i < len; i++)
-                {
-                    array.Add(ParseFromStream(s));
-                }
-                return array;
-            }, async (b, s, c) =>
-            {
-                uint len = BitConverter.ToUInt32((await s.FillBufferAsync(4, c))
-                    .SwapBytes(), 0);
-                MPackArray array = new MPackArray();
-                for (uint i = 0; i < len; i++)
-                {
-                    array.Add(await ParseFromStreamAsync(s, c));
-                }
-                return array;
-            });
-
-            // map (uint16 length)
-            _lookup.Add(0xDE, (b, s) =>
-            {
-                int len = BitConverter.ToUInt16(s.FillBuffer(2).SwapBytes(), 0);
-                MPackMap map = new MPackMap();
-                for (int i = 0; i < len; i++)
-                {
-                    var key = MPackExtensions.ReadString(s);
-                    var val = ParseFromStream(s);
-                    map.Add(key, val);
-                }
-                return map;
-            }, async (b, s, c) =>
-            {
-                int len = BitConverter.ToUInt16((await s.FillBufferAsync(2, c))
-                    .SwapBytes(), 0);
-                MPackMap map = new MPackMap();
-                for (int i = 0; i < len; i++)
-                {
-                    var key = await MPackExtensions.ReadStringAsync(s, c);
-                    var val = await ParseFromStreamAsync(s, c);
-                    map.Add(key, val);
-                }
-                return map;
-            });
-
-            // map (uint32 length)
-            _lookup.Add(0xDF, (b, s) =>
-            {
-                uint len = BitConverter.ToUInt32(s.FillBuffer(4).SwapBytes(), 0);
-                MPackMap map = new MPackMap();
-                for (uint i = 0; i < len; i++)
-                {
-                    var key = MPackExtensions.ReadString(s);
-                    var val = ParseFromStream(s);
-                    map.Add(key, val);
-                }
-                return map;
-            }, async (b, s, c) =>
-            {
-                uint len = BitConverter.ToUInt32((await s.FillBufferAsync(4, c))
-                    .SwapBytes(), 0);
-                MPackMap map = new MPackMap();
-                for (uint i = 0; i < len; i++)
-                {
-                    var key = await MPackExtensions.ReadStringAsync(s, c);
-                    var val = await ParseFromStreamAsync(s, c);
-                    map.Add(key, val);
-                }
-                return map;
-            });
-
-            //  str family
-            _lookup.AddRange(0xD9, 0xDB,
-                (b, s) => FromString(MPackExtensions.ReadString(b, s)),
-                async (b, s, c) => FromString(await MPackExtensions.ReadStringAsync(b, s, c)));
-
-            // int8   0xD0   xxxxxxxx
-            _lookup.Add(0xD0,
-                (b, s) => FromInteger((sbyte)s.ReadByte()),
-                async (b, s, c) => FromInteger((sbyte)await s.ReadByteAsync(c)));
-
-            // int16   0xd1 xxxxxxxx xxxxxxxx   
-            _lookup.Add(0xD1, (b, s) =>
-            {
-                var v = BitConverter.ToInt16(s.FillBuffer(2).SwapBytes(), 0);
-                return FromInteger(v);
-            }, async (b, s, c) =>
-            {
-                var v = BitConverter.ToInt16((await s.FillBufferAsync(2, c))
-                    .SwapBytes(), 0);
-                return FromInteger(v);
-            });
-
-            // int32    0xD2 xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx  
-            _lookup.Add(0xD2, (b, s) =>
-            {
-                var v = BitConverter.ToInt32(s.FillBuffer(4).SwapBytes(), 0);
-                return FromInteger(v);
-            }, async (b, s, c) =>
-            {
-                var v = BitConverter.ToInt32((await s.FillBufferAsync(4, c))
-                    .SwapBytes(), 0);
-                return FromInteger(v);
-            });
-
-            // int64      0xD3 xxxxxxxx (x8)
-            _lookup.Add(0xD3, (b, s) =>
-            {
-                var v = BitConverter.ToInt64(s.FillBuffer(8).SwapBytes(), 0);
-                return FromInteger(v);
-            }, async (b, s, c) =>
-            {
-                var v = BitConverter.ToInt64((await s.FillBufferAsync(8, c))
-                    .SwapBytes(), 0);
-                return FromInteger(v);
-            });
-        }
-
-        public MPack this[int index]
+        public virtual MPack this[int index]
         {
             get
             {
-                var array = this as MPackArray;
-                if (array == null)
-                    throw new InvalidOperationException("Can not use array indexor on mpack type: " + ValueType);
-                return array[index];
+                throw new NotSupportedException("Array indexor not supported in this context.");
             }
             set
             {
-                var array = this as MPackArray;
-                if (array == null)
-                    throw new InvalidOperationException("Can not use array indexor on mpack type: " + ValueType);
-                array[index] = value;
+                throw new NotSupportedException("Array indexor not supported in this context.");
             }
         }
-        public MPack this[string key]
+        public virtual MPack this[string key]
         {
             get
             {
-                var map = this as MPackMap;
-                if (map == null)
-                    throw new InvalidOperationException("Can not use map indexor on mpack type: " + ValueType);
-                return map[key];
+                throw new NotSupportedException("Map indexor not supported in this context.");
             }
             set
             {
-                var map = this as MPackMap;
-                if (map == null)
-                    throw new InvalidOperationException("Can not use map indexor on mpack type: " + ValueType);
-                map[key] = value;
-
+                throw new NotSupportedException("Map indexor not supported in this context.");
             }
-        }
-
-        public static MPack ParseFromBytes(byte[] array)
-        {
-            using (MemoryStream ms = new MemoryStream(array))
-                return ParseFromStream(ms);
-        }
-        public static MPack ParseFromStream(Stream stream)
-        {
-            byte selector = (byte)stream.ReadByte();
-            return _lookup[selector].Read(selector, stream);
-        }
-        public static Task<MPack> ParseFromStreamAsync(Stream stream)
-        {
-            return ParseFromStreamAsync(stream, CancellationToken.None);
-        }
-        public static async Task<MPack> ParseFromStreamAsync(Stream stream, CancellationToken token)
-        {
-            byte selector = await stream.ReadByteAsync(token);
-            return await _lookup[selector].ReadAsync(selector, stream, token);
         }
 
         public static MPack Null()
         {
-            return new MPack() { _type = MsgPackType.Null };
+            return new MPack() { _type = MPackType.Null };
         }
-        public static MPack FromDateTime(DateTime value)
+        public static MPack From(object value)
         {
-            return new MPack() { _type = MsgPackType.DateTime, _value = value };
-        }
-        public static MPack FromBytes(byte[] value)
-        {
-            return new MPack() { _type = MsgPackType.Binary, _value = value };
-        }
-        public static MPack FromBool(bool value)
-        {
-            return new MPack() { _type = MsgPackType.Boolean, _value = value };
-        }
-        public static MPack FromDouble(double value)
-        {
-            return new MPack() { _type = MsgPackType.Double, _value = value };
-        }
-        public static MPack FromSingle(float value)
-        {
-            return new MPack() { _type = MsgPackType.Single, _value = value };
-        }
-        public static MPack FromString(string value)
-        {
-            return new MPack() { _type = MsgPackType.String, _value = value };
-        }
-        public static MPack FromInteger(int number)
-        {
-            return new MPack() { _type = MsgPackType.Integer, _value = number };
-        }
-        public static MPack FromInteger(long number)
-        {
-            return new MPack() { _type = MsgPackType.Integer, _value = number };
-        }
-        public static MPack FromInteger(ulong number)
-        {
-            return new MPack() { _type = MsgPackType.UInt64, _value = number };
-        }
-        public static MPackArray FromArray(IEnumerable<MPack> value)
-        {
-            return new MPackArray(value);
-        }
-        public static MPackMap FromDictionary(IDictionary<string, MPack> value)
-        {
-            return new MPackMap(value);
-        }
-        public static MPackMap FromDictionary(IEnumerable<KeyValuePair<string, MPack>> value)
-        {
-            return new MPackMap(value);
-        }
-        public static MPack From<T>(T value)
-        {
-            return From(typeof(T), value);
-        }
-        public static MPack From(Type type, object value)
-        {
-            if (type == typeof(byte[]))
-                return FromBytes((byte[])value);
+            if (value == null)
+                return new MPack(null, MPackType.Null);
+
+            var type = value.GetType();
+            if (type.IsArray)
+            {
+                var elementType = type.GetElementType();
+                if (elementType == typeof(byte))
+                    return new MPack(value, MPackType.Binary);
+                if (elementType == typeof(MPack))
+                    return new MPackArray((MPack[])value);
+
+                var elementTypeCode = (int)Type.GetTypeCode(elementType);
+                if (elementTypeCode <= 2 || elementTypeCode == 16)
+                    throw new NotSupportedException(String.Format("The specified array type ({0}) is not supported by MsgPack", elementType.Name));
+
+                MPackArray resultArray = new MPackArray();
+                Array inputArray = (Array)value;
+                foreach (var obj in inputArray)
+                {
+                    resultArray.Add(From(obj));
+                }
+                return resultArray;
+            }
+
             TypeCode code = Type.GetTypeCode(type);
             switch (code)
             {
                 case TypeCode.Boolean:
-                    return new MPack(value, MsgPackType.Boolean);
+                    return new MPack(value, MPackType.Bool);
                 case TypeCode.Char:
-                    return new MPack(value, MsgPackType.Integer);
+                    return new MPack(value, MPackType.UInt);
                 case TypeCode.SByte:
-                    return new MPack(value, MsgPackType.Integer);
+                    return new MPack(value, MPackType.SInt);
                 case TypeCode.Byte:
-                    return new MPack(value, MsgPackType.Integer);
+                    return new MPack(value, MPackType.UInt);
                 case TypeCode.Int16:
-                    return new MPack(value, MsgPackType.Integer);
+                    return new MPack(value, MPackType.SInt);
                 case TypeCode.UInt16:
-                    return new MPack(value, MsgPackType.Integer);
+                    return new MPack(value, MPackType.UInt);
                 case TypeCode.Int32:
-                    return new MPack(value, MsgPackType.Integer);
+                    return new MPack(value, MPackType.SInt);
                 case TypeCode.UInt32:
-                    return new MPack(value, MsgPackType.Integer);
+                    return new MPack(value, MPackType.UInt);
                 case TypeCode.Int64:
-                    return new MPack(value, MsgPackType.Integer);
+                    return new MPack(value, MPackType.SInt);
                 case TypeCode.UInt64:
-                    return new MPack(value, MsgPackType.UInt64);
+                    return new MPack(value, MPackType.UInt);
                 case TypeCode.Single:
-                    return new MPack(value, MsgPackType.Single);
+                    return new MPack(value, MPackType.Single);
                 case TypeCode.Double:
-                    return new MPack(value, MsgPackType.Double);
+                    return new MPack(value, MPackType.Double);
                 case TypeCode.Decimal:
-                    return new MPack(value, MsgPackType.Double);
-                case TypeCode.DateTime:
-                    return new MPack(value, MsgPackType.DateTime);
+                    return new MPack((double)(decimal)value, MPackType.Double);
                 case TypeCode.String:
-                    return new MPack(value, MsgPackType.String);
+                    return new MPack(value, MPackType.String);
             }
             throw new NotSupportedException("Tried to create MPack object from unsupported type: " + type.Name);
         }
 
+        public object To(Type t)
+        {
+            if (ValueType == MPackType.Null)
+                return null;
+            if (t == typeof(object))
+                return Value;
+
+            // handle basic array types, ex. string[], int[], etc.
+            // will fail if one of the child objects is of the incorrect type.
+            if (t.IsArray)
+            {
+                var elementType = t.GetElementType();
+                if (elementType == typeof(byte))
+                    return (byte[])Value;
+
+                if (elementType == typeof(object))
+                    throw new ArgumentException("Array element type must not equal typeof(object).", nameof(t));
+
+                int elementTypeCode = (int)Type.GetTypeCode(elementType);
+                if (elementTypeCode <= 2 || elementTypeCode == 16)
+                    throw new NotSupportedException(String.Format("Casting to an array of type {0} is not supported.",
+                        elementType.Name));
+
+                var mpackArray = Value as MPackArray;
+                if (mpackArray == null)
+                    throw new ArgumentException(String.Format("Cannot conver MPack type {0} into type {1} (it is not an array).",
+                        ValueType, t.Name));
+
+                if (elementType == typeof(MPack))
+                    return mpackArray.ToArray();
+
+                var count = mpackArray.Count;
+                var objArray = Array.CreateInstance(elementType, count);
+                for (int i = 0; i < count; i++)
+                    objArray.SetValue(mpackArray[i].To(elementType), i);
+                return objArray;
+            }
+
+            return Convert.ChangeType(Value, t);
+        }
         public T To<T>()
         {
-            if (typeof(T) == typeof(object))
-                return (T)Value;
-            if (typeof(T) == typeof(byte[]) && ValueType == MsgPackType.Binary)
-                return (T)Value;
-
-            TypeCode code = Type.GetTypeCode(typeof(T));
-            //boolean
-            if (code == TypeCode.Boolean && ValueType == MsgPackType.Boolean)
-                return (T)(object)Convert.ToBoolean(Value);
-
-            //integers
-            if (code == TypeCode.Byte && ValueType == MsgPackType.Integer)
-                return (T)(object)Convert.ToByte(Value);
-            if (code == TypeCode.SByte && ValueType == MsgPackType.Integer)
-                return (T)(object)Convert.ToSByte(Value);
-            if (code == TypeCode.Int16 && ValueType == MsgPackType.Integer)
-                return (T)(object)Convert.ToInt16(Value);
-            if (code == TypeCode.UInt16 && ValueType == MsgPackType.Integer)
-                return (T)(object)Convert.ToUInt16(Value);
-            if (code == TypeCode.Int32 && ValueType == MsgPackType.Integer)
-                return (T)(object)Convert.ToInt32(Value);
-            if (code == TypeCode.UInt32 && ValueType == MsgPackType.Integer)
-                return (T)(object)Convert.ToUInt32(Value);
-            if (code == TypeCode.Int64 && ValueType == MsgPackType.Integer)
-                return (T)(object)Convert.ToInt64(Value);
-            if (code == TypeCode.UInt64 && ValueType == MsgPackType.UInt64)
-                return (T)(object)Convert.ToUInt64(Value);
-
-            //string
-            if (code == TypeCode.String && ValueType == MsgPackType.String)
-                return (T)(object)Convert.ToString(Value);
-
-            //floating
-            if (code == TypeCode.Single &&
-                (ValueType == MsgPackType.Single || ValueType == MsgPackType.Double || ValueType == MsgPackType.Integer))
-                return (T)(object)Convert.ToSingle(Value);
-            if (code == TypeCode.Double &&
-                (ValueType == MsgPackType.Single || ValueType == MsgPackType.Double || ValueType == MsgPackType.Integer))
-                return (T)(object)Convert.ToDouble(Value);
-            if (code == TypeCode.Decimal &&
-                (ValueType == MsgPackType.Single || ValueType == MsgPackType.Double || ValueType == MsgPackType.Integer))
-                return (T)(object)Convert.ToDecimal(Value);
-
-            //special
-            if (code == TypeCode.DateTime && ValueType == MsgPackType.DateTime || ValueType == MsgPackType.Integer)
-                return (T)(object)new DateTime(Convert.ToInt64(Value));
-
-            if (code == TypeCode.Char && ValueType == MsgPackType.Integer)
-            {
-                return (T)(object)(int)Value;
-            }
-            throw new InvalidCastException("This MPack object is not of type " + typeof(T).Name + ", and no valid cast was found.");
+            return (T)To(typeof(T));
         }
         public T ToOrDefault<T>()
         {
@@ -608,10 +192,70 @@ namespace MsgPack
             }
         }
 
+        public static bool operator ==(MPack m1, MPack m2)
+        {
+            if (ReferenceEquals(m1, m2)) return true;
+            if (!ReferenceEquals(m1, null))
+                return m1.Equals(m2);
+            return false;
+        }
+        public static bool operator !=(MPack m1, MPack m2)
+        {
+            if (ReferenceEquals(m1, m2)) return false;
+            if (!ReferenceEquals(m1, null))
+                return !m1.Equals(m2);
+            return true;
+        }
 
+        public static implicit operator MPack(bool value) { return From(value); }
+        public static implicit operator MPack(float value) { return From(value); }
+        public static implicit operator MPack(double value) { return From(value); }
+        public static implicit operator MPack(byte value) { return From(value); }
+        public static implicit operator MPack(ushort value) { return From(value); }
+        public static implicit operator MPack(uint value) { return From(value); }
+        public static implicit operator MPack(ulong value) { return From(value); }
+        public static implicit operator MPack(sbyte value) { return From(value); }
+        public static implicit operator MPack(short value) { return From(value); }
+        public static implicit operator MPack(int value) { return From(value); }
+        public static implicit operator MPack(string value) { return From(value); }
+        public static implicit operator MPack(byte[] value) { return From(value); }
+        public static implicit operator MPack(MPack[] value) { return From(value); }
+
+        public static explicit operator bool(MPack value) { return value.To<bool>(); }
+        public static explicit operator float(MPack value) { return value.To<float>(); }
+        public static explicit operator double(MPack value) { return value.To<double>(); }
+        public static explicit operator byte(MPack value) { return value.To<byte>(); }
+        public static explicit operator ushort(MPack value) { return value.To<ushort>(); }
+        public static explicit operator uint(MPack value) { return value.To<uint>(); }
+        public static explicit operator ulong(MPack value) { return value.To<ulong>(); }
+        public static explicit operator sbyte(MPack value) { return value.To<sbyte>(); }
+        public static explicit operator short(MPack value) { return value.To<short>(); }
+        public static explicit operator int(MPack value) { return value.To<int>(); }
+        public static explicit operator string(MPack value) { return value.To<string>(); }
+        public static explicit operator byte[] (MPack value) { return value.To<byte[]>(); }
+        public static explicit operator MPack[] (MPack value) { return value.To<MPack[]>(); }
+
+        public static MPack ParseFromBytes(byte[] array)
+        {
+            using (MemoryStream ms = new MemoryStream(array))
+                return ParseFromStream(ms);
+        }
+        public static MPack ParseFromStream(Stream stream)
+        {
+            return Reader.ParseFromStream(stream);
+        }
+        public static Task<MPack> ParseFromStreamAsync(Stream stream)
+        {
+            return ParseFromStreamAsync(stream, CancellationToken.None);
+        }
+        public static Task<MPack> ParseFromStreamAsync(Stream stream, CancellationToken token)
+        {
+            return Reader.ParseFromStreamAsync(stream, token);
+        }
         public void EncodeToStream(Stream stream)
         {
-            EncodeToStreamInternal(stream);
+            Writer.EncodeToStream(stream, this);
+
         }
         public Task EncodeToStreamAsync(Stream stream)
         {
@@ -621,136 +265,26 @@ namespace MsgPack
         {
             using (MemoryStream ms = new MemoryStream())
             {
-                EncodeToStreamInternal(ms);
+                Writer.EncodeToStream(ms, this);
+
                 ms.Position = 0;
                 await ms.CopyToAsync(stream, 65535, token);
             }
         }
         public byte[] EncodeToBytes()
         {
-            MemoryStream ms = new MemoryStream();
-            EncodeToStreamInternal(ms);
-            return ms.ToArray();
-        }
-
-        private void EncodeToStreamInternal(Stream ms)
-        {
-            switch (ValueType)
+            using (MemoryStream ms = new MemoryStream())
             {
-                case MsgPackType.Unknown:
-                case MsgPackType.Null:
-                    MPackExtensions.WriteNull(ms);
-                    break;
-                case MsgPackType.String:
-                    MPackExtensions.WriteString(ms, Convert.ToString(Value));
-                    break;
-                case MsgPackType.Integer:
-                    MPackExtensions.WriteInteger(ms, Convert.ToInt64(Value));
-                    break;
-                case MsgPackType.UInt64:
-                    MPackExtensions.WriteUInt64(ms, Convert.ToUInt64(Value));
-                    break;
-                case MsgPackType.Boolean:
-                    MPackExtensions.WriteBoolean(ms, Convert.ToBoolean(Value));
-                    break;
-                case MsgPackType.Double:
-                    MPackExtensions.WriteFloat(ms, Convert.ToDouble(Value));
-                    break;
-                case MsgPackType.Single:
-                    MPackExtensions.WriteSingle(ms, Convert.ToSingle(Value));
-                    break;
-                case MsgPackType.DateTime:
-                    MPackExtensions.WriteInteger(ms, Convert.ToInt64(((DateTime)Value).Ticks));
-                    break;
-                case MsgPackType.Binary:
-                    MPackExtensions.WriteBinary(ms, (byte[])Value);
-                    break;
-                case MsgPackType.Map:
-                    WriteMap(ms);
-                    break;
-                case MsgPackType.Array:
-                    WirteArray(ms);
-                    break;
-                default:
-                    MPackExtensions.WriteNull(ms);
-                    break;
-            }
-        }
-        private void WriteMap(Stream stream)
-        {
-            MPackMap map = this as MPackMap;
-            if (map == null)
-                throw new InvalidOperationException("A call to WriteMap can not occur unless type is of MsgPackMap");
-
-            byte b;
-            byte[] lenBytes;
-            int len = map.Count;
-            if (len <= 15)
-            {
-                b = (byte)(0x80 + (byte)len);
-                stream.WriteByte(b);
-            }
-            else if (len <= 65535)
-            {
-                b = 0xDE;
-                stream.WriteByte(b);
-
-                lenBytes = MPackExtensions.SwapBytes(BitConverter.GetBytes((Int16)len));
-                stream.Write(lenBytes, 0, lenBytes.Length);
-            }
-            else
-            {
-                b = 0xDF;
-                stream.WriteByte(b);
-                lenBytes = MPackExtensions.SwapBytes(BitConverter.GetBytes((Int32)len));
-                stream.Write(lenBytes, 0, lenBytes.Length);
-            }
-
-            foreach (var child in map)
-            {
-                MPackExtensions.WriteString(stream, child.Key);
-                child.Value.EncodeToStreamInternal(stream);
-            }
-        }
-        private void WirteArray(Stream ms)
-        {
-            MPackArray list = this as MPackArray;
-            if (list == null)
-                throw new InvalidOperationException("A call to WirteArray can not occur unless type is of MsgPackArray");
-
-            byte b;
-            byte[] lenBytes;
-            int len = list.Count;
-            if (len <= 15)
-            {
-                b = (byte)(0x90 + (byte)len);
-                ms.WriteByte(b);
-            }
-            else if (len <= 65535)
-            {
-                b = 0xDC;
-                ms.WriteByte(b);
-
-                lenBytes = MPackExtensions.SwapBytes(BitConverter.GetBytes((Int16)len));
-                ms.Write(lenBytes, 0, lenBytes.Length);
-            }
-            else
-            {
-                b = 0xDD;
-                ms.WriteByte(b);
-                lenBytes = MPackExtensions.SwapBytes(BitConverter.GetBytes((Int32)len));
-                ms.Write(lenBytes, 0, lenBytes.Length);
-            }
-
-
-            for (int i = 0; i < len; i++)
-            {
-                list[i].EncodeToStreamInternal(ms);
+                Writer.EncodeToStream(ms, this);
+                return ms.ToArray();
             }
         }
 
         public bool Equals(MPack other)
         {
+            if (ReferenceEquals(other, null))
+                return false;
+
             if (this is MPackArray && other is MPackArray)
             {
                 var ob1 = (MPackArray)this;
@@ -768,6 +302,13 @@ namespace MsgPack
                 {
                     return ob1.OrderBy(r => r.Key).SequenceEqual(ob2.OrderBy(r => r.Key));
                 }
+            }
+            else if ((this.ValueType == MPackType.SInt || this.ValueType == MPackType.UInt) &&
+                     (other.ValueType == MPackType.SInt || other.ValueType == MPackType.UInt))
+            {
+                decimal xd = Convert.ToDecimal(Value);
+                decimal yd = Convert.ToDecimal(other.Value);
+                return xd == yd;
             }
             else return Value.Equals(other.Value);
 
@@ -790,623 +331,75 @@ namespace MsgPack
             return Value.ToString();
         }
 
-        private class Reader
+        TypeCode IConvertible.GetTypeCode()
         {
-            private readonly Func<byte, Stream, MPack> _sync;
-            private readonly Func<byte, Stream, CancellationToken, Task<MPack>> _async;
-
-            public Reader(Func<byte, Stream, MPack> sync, Func<byte, Stream, CancellationToken, Task<MPack>> async)
-            {
-                _sync = sync;
-                _async = async;
-            }
-
-            public MPack Read(byte selector, Stream stream)
-            {
-                return _sync(selector, stream);
-            }
-            public Task<MPack> ReadAsync(byte selector, Stream stream, CancellationToken token)
-            {
-                return _async(selector, stream, token);
-            }
+            if(ValueType == MPackType.Null)
+                return TypeCode.Object;
+            return Type.GetTypeCode(Value.GetType());
         }
-
-        private class ReaderLookup : Dictionary<byte, Reader>
+        bool IConvertible.ToBoolean(IFormatProvider provider)
         {
-            public void AddRange(byte rangeStart, byte rangeEnd, Reader reader)
-            {
-                var test = Enumerable.Range(rangeStart, rangeEnd - rangeStart + 1).ToArray();
-                foreach (var b in test.Select(i => (byte)i))
-                {
-                    this.Add(b, reader);
-                }
-            }
-            public void AddRange(byte rangeStart, byte rangeEnd, Func<byte, Stream, MPack> sync,
-                Func<byte, Stream, CancellationToken, Task<MPack>> async)
-            {
-                AddRange(rangeStart, rangeEnd, new Reader(sync, async));
-            }
-            public void Add(byte key, Func<byte, Stream, MPack> sync,
-                Func<byte, Stream, CancellationToken, Task<MPack>> async)
-            {
-                Add(key, new Reader(sync, async));
-            }
+            return To<bool>();
         }
-    }
-
-    internal static class MPackExtensions
-    {
-        private const string EX_STREAMEND = "Stream ended but expecting more data. Data may be incorrupt or stream ended prematurely.";
-
-        public static string ReadString(Stream ms, int len)
+        char IConvertible.ToChar(IFormatProvider provider)
         {
-            byte[] rawBytes = new byte[len];
-            ms.Read(rawBytes, 0, len);
-            return Encoding.UTF8.GetString(rawBytes);
+            return To<char>();
         }
-        public static string ReadString(Stream ms)
+        sbyte IConvertible.ToSByte(IFormatProvider provider)
         {
-            byte strFlag = (byte)ms.ReadByte();
-            return ReadString(strFlag, ms);
+            return To<sbyte>();
         }
-        public static string ReadString(byte strFlag, Stream ms)
+        byte IConvertible.ToByte(IFormatProvider provider)
         {
-            //
-            //fixstr stores a byte array whose length is upto 31 bytes:
-            //+--------+========+
-            //|101XXXXX|  data  |
-            //+--------+========+
-            //
-            //str 8 stores a byte array whose length is upto (2^8)-1 bytes:
-            //+--------+--------+========+
-            //|  0xd9  |YYYYYYYY|  data  |
-            //+--------+--------+========+
-            //
-            //str 16 stores a byte array whose length is upto (2^16)-1 bytes:
-            //+--------+--------+--------+========+
-            //|  0xda  |ZZZZZZZZ|ZZZZZZZZ|  data  |
-            //+--------+--------+--------+========+
-            //
-            //str 32 stores a byte array whose length is upto (2^32)-1 bytes:
-            //+--------+--------+--------+--------+--------+========+
-            //|  0xdb  |AAAAAAAA|AAAAAAAA|AAAAAAAA|AAAAAAAA|  data  |
-            //+--------+--------+--------+--------+--------+========+
-            //
-            //where
-            //* XXXXX is a 5-bit unsigned integer which represents N
-            //* YYYYYYYY is a 8-bit unsigned integer which represents N
-            //* ZZZZZZZZ_ZZZZZZZZ is a 16-bit big-endian unsigned integer which represents N
-            //* AAAAAAAA_AAAAAAAA_AAAAAAAA_AAAAAAAA is a 32-bit big-endian unsigned integer which represents N
-            //* N is the length of data   
-
-            byte[] rawBytes = null;
-            int len = 0;
-            if ((strFlag >= 0xA0) && (strFlag <= 0xBF))
-            {
-                len = strFlag - 0xA0;
-            }
-            else if (strFlag == 0xD9)
-            {
-                len = ms.ReadByte();
-            }
-            else if (strFlag == 0xDA)
-            {
-                rawBytes = new byte[2];
-                ms.Read(rawBytes, 0, 2);
-                rawBytes = SwapBytes(rawBytes);
-                len = BitConverter.ToInt16(rawBytes, 0);
-            }
-            else if (strFlag == 0xDB)
-            {
-                rawBytes = new byte[4];
-                ms.Read(rawBytes, 0, 4);
-                rawBytes = SwapBytes(rawBytes);
-                len = BitConverter.ToInt32(rawBytes, 0);
-            }
-            rawBytes = new byte[len];
-            ms.Read(rawBytes, 0, len);
-            return Encoding.UTF8.GetString(rawBytes);
+            return To<byte>();
         }
-        public static async Task<string> ReadStringAsync(byte strFlag, Stream ms, CancellationToken token)
+        short IConvertible.ToInt16(IFormatProvider provider)
         {
-            //
-            //fixstr stores a byte array whose length is upto 31 bytes:
-            //+--------+========+
-            //|101XXXXX|  data  |
-            //+--------+========+
-            //
-            //str 8 stores a byte array whose length is upto (2^8)-1 bytes:
-            //+--------+--------+========+
-            //|  0xd9  |YYYYYYYY|  data  |
-            //+--------+--------+========+
-            //
-            //str 16 stores a byte array whose length is upto (2^16)-1 bytes:
-            //+--------+--------+--------+========+
-            //|  0xda  |ZZZZZZZZ|ZZZZZZZZ|  data  |
-            //+--------+--------+--------+========+
-            //
-            //str 32 stores a byte array whose length is upto (2^32)-1 bytes:
-            //+--------+--------+--------+--------+--------+========+
-            //|  0xdb  |AAAAAAAA|AAAAAAAA|AAAAAAAA|AAAAAAAA|  data  |
-            //+--------+--------+--------+--------+--------+========+
-            //
-            //where
-            //* XXXXX is a 5-bit unsigned integer which represents N
-            //* YYYYYYYY is a 8-bit unsigned integer which represents N
-            //* ZZZZZZZZ_ZZZZZZZZ is a 16-bit big-endian unsigned integer which represents N
-            //* AAAAAAAA_AAAAAAAA_AAAAAAAA_AAAAAAAA is a 32-bit big-endian unsigned integer which represents N
-            //* N is the length of data   
-            byte[] rawBytes;
-            int len = 0;
-            if ((strFlag >= 0xA0) && (strFlag <= 0xBF))
-            {
-                len = strFlag - 0xA0;
-            }
-            else if (strFlag == 0xD9)
-            {
-                len = ms.ReadByte();
-            }
-            else if (strFlag == 0xDA)
-            {
-                rawBytes = await FillBufferAsync(ms, 2, token);
-                rawBytes = SwapBytes(rawBytes);
-                len = BitConverter.ToInt16(rawBytes, 0);
-            }
-            else if (strFlag == 0xDB)
-            {
-                rawBytes = await FillBufferAsync(ms, 4, token);
-                rawBytes = SwapBytes(rawBytes);
-                len = BitConverter.ToInt32(rawBytes, 0);
-            }
-            rawBytes = await FillBufferAsync(ms, len, token);
-            return Encoding.UTF8.GetString(rawBytes);
+            return To<short>();
         }
-        public static async Task<string> ReadStringAsync(Stream ms, CancellationToken token)
+        ushort IConvertible.ToUInt16(IFormatProvider provider)
         {
-            return await ReadStringAsync((await FillBufferAsync(ms, 1, token))[0], ms, token);
+            return To<ushort>();
         }
-        public static async Task<string> ReadStringAsync(Stream ms, int len, CancellationToken token)
+        int IConvertible.ToInt32(IFormatProvider provider)
         {
-            return Encoding.UTF8.GetString(await FillBufferAsync(ms, len, token));
+            return To<int>();
         }
-        public static async Task<byte> ReadByteAsync(this Stream ms, CancellationToken token)
+        uint IConvertible.ToUInt32(IFormatProvider provider)
         {
-            var buffer = await FillBufferAsync(ms, 1, token);
-            return buffer[0];
+            return To<uint>();
         }
-
-        public static void WriteNull(Stream ms)
+        long IConvertible.ToInt64(IFormatProvider provider)
         {
-            ms.WriteByte(0xC0);
+            return To<long>();
         }
-        public static void WriteString(Stream ms, String strVal)
+        ulong IConvertible.ToUInt64(IFormatProvider provider)
         {
-            //
-            //fixstr stores a byte array whose length is upto 31 bytes:
-            //+--------+========+
-            //|101XXXXX|  data  |
-            //+--------+========+
-            //
-            //str 8 stores a byte array whose length is upto (2^8)-1 bytes:
-            //+--------+--------+========+
-            //|  0xd9  |YYYYYYYY|  data  |
-            //+--------+--------+========+
-            //
-            //str 16 stores a byte array whose length is upto (2^16)-1 bytes:
-            //+--------+--------+--------+========+
-            //|  0xda  |ZZZZZZZZ|ZZZZZZZZ|  data  |
-            //+--------+--------+--------+========+
-            //
-            //str 32 stores a byte array whose length is upto (2^32)-1 bytes:
-            //+--------+--------+--------+--------+--------+========+
-            //|  0xdb  |AAAAAAAA|AAAAAAAA|AAAAAAAA|AAAAAAAA|  data  |
-            //+--------+--------+--------+--------+--------+========+
-            //
-            //where
-            //* XXXXX is a 5-bit unsigned integer which represents N
-            //* YYYYYYYY is a 8-bit unsigned integer which represents N
-            //* ZZZZZZZZ_ZZZZZZZZ is a 16-bit big-endian unsigned integer which represents N
-            //* AAAAAAAA_AAAAAAAA_AAAAAAAA_AAAAAAAA is a 32-bit big-endian unsigned integer which represents N
-            //* N is the length of data
-
-            byte[] rawBytes = Encoding.UTF8.GetBytes(strVal);
-            byte[] lenBytes = null;
-            int len = rawBytes.Length;
-            byte b = 0;
-            if (len <= 31)
-            {
-                b = (byte)(0xA0 + (byte)len);
-                ms.WriteByte(b);
-            }
-            else if (len <= 255)
-            {
-                b = 0xD9;
-                ms.WriteByte(b);
-                b = (byte)len;
-                ms.WriteByte(b);
-            }
-            else if (len <= 65535)
-            {
-                b = 0xDA;
-                ms.WriteByte(b);
-                lenBytes = MPackExtensions.SwapBytes(BitConverter.GetBytes(Convert.ToUInt16(len)));
-                ms.Write(lenBytes, 0, lenBytes.Length);
-            }
-            else
-            {
-                b = 0xDB;
-                ms.WriteByte(b);
-                lenBytes = MPackExtensions.SwapBytes(BitConverter.GetBytes(Convert.ToUInt32(len)));
-                ms.Write(lenBytes, 0, lenBytes.Length);
-            }
-            ms.Write(rawBytes, 0, rawBytes.Length);
+            return To<ulong>();
         }
-        public static void WriteBinary(Stream ms, byte[] rawBytes)
+        float IConvertible.ToSingle(IFormatProvider provider)
         {
-
-            byte[] lenBytes = null;
-            int len = rawBytes.Length;
-            byte b = 0;
-            if (len <= 255)
-            {
-                b = 0xC4;
-                ms.WriteByte(b);
-                b = (byte)len;
-                ms.WriteByte(b);
-            }
-            else if (len <= 65535)
-            {
-                b = 0xC5;
-                ms.WriteByte(b);
-
-                lenBytes = MPackExtensions.SwapBytes(BitConverter.GetBytes(Convert.ToUInt16(len)));
-                ms.Write(lenBytes, 0, lenBytes.Length);
-            }
-            else
-            {
-                b = 0xC6;
-                ms.WriteByte(b);
-
-                lenBytes = MPackExtensions.SwapBytes(BitConverter.GetBytes(Convert.ToUInt32(len)));
-                ms.Write(lenBytes, 0, lenBytes.Length);
-            }
-            ms.Write(rawBytes, 0, rawBytes.Length);
+            return To<float>();
         }
-        public static void WriteFloat(Stream ms, Double fVal)
+        double IConvertible.ToDouble(IFormatProvider provider)
         {
-            ms.WriteByte(0xCB);
-
-            ms.Write(BitConverter.GetBytes(fVal).SwapBytes(), 0, 8);
+            return To<double>();
         }
-        public static void WriteSingle(Stream ms, Single fVal)
+        decimal IConvertible.ToDecimal(IFormatProvider provider)
         {
-            ms.WriteByte(0xCA);
-            ms.Write(MPackExtensions.SwapBytes(BitConverter.GetBytes(fVal)), 0, 4);
+            return To<decimal>();
         }
-        public static void WriteBoolean(Stream ms, Boolean bVal)
+        DateTime IConvertible.ToDateTime(IFormatProvider provider)
         {
-            if (bVal)
-            {
-                ms.WriteByte(0xC3);
-            }
-            else
-            {
-                ms.WriteByte(0xC2);
-            }
+            return To<DateTime>();
         }
-        public static void WriteUInt64(Stream ms, UInt64 iVal)
+        string IConvertible.ToString(IFormatProvider provider)
         {
-            ms.WriteByte(0xCF);
-            byte[] dataBytes = BitConverter.GetBytes(iVal);
-            ms.Write(MPackExtensions.SwapBytes(dataBytes), 0, 8);
+            return To<string>();
         }
-        public static void WriteInteger(Stream ms, Int64 iVal)
+        object IConvertible.ToType(Type conversionType, IFormatProvider provider)
         {
-            if (iVal >= 0)
-            {   // fixedval
-                if (iVal <= 127)
-                {
-                    ms.WriteByte((byte)iVal);
-                }
-                else if (iVal <= 255)
-                {  //UInt8
-                    ms.WriteByte(0xCC);
-                    ms.WriteByte((byte)iVal);
-                }
-                else if (iVal <= (UInt32)0xFFFF)
-                {  //UInt16
-                    ms.WriteByte(0xCD);
-                    ms.Write(BitConverter.GetBytes((Int16)iVal).SwapBytes(), 0, 2);
-                }
-                else if (iVal <= (UInt32)0xFFFFFFFF)
-                {  //UInt32
-                    ms.WriteByte(0xCE);
-                    ms.Write(BitConverter.GetBytes((Int32)iVal).SwapBytes(), 0, 4);
-                }
-                else
-                {  //Int64
-                    ms.WriteByte(0xD3);
-                    ms.Write(BitConverter.GetBytes(iVal).SwapBytes(), 0, 8);
-                }
-            }
-            else
-            {  // <0
-                if (iVal <= Int32.MinValue)  //-2147483648  // 64 bit
-                {
-                    ms.WriteByte(0xD3);
-                    ms.Write(BitConverter.GetBytes(iVal).SwapBytes(), 0, 8);
-                }
-                else if (iVal <= Int16.MinValue)   // -32768    // 32 bit
-                {
-                    ms.WriteByte(0xD2);
-                    ms.Write(BitConverter.GetBytes((Int32)iVal).SwapBytes(), 0, 4);
-                }
-                else if (iVal <= -128)   // -32768    // 32 bit
-                {
-                    ms.WriteByte(0xD1);
-                    ms.Write(BitConverter.GetBytes((Int16)iVal).SwapBytes(), 0, 2);
-                }
-                else if (iVal <= -32)
-                {
-                    ms.WriteByte(0xD0);
-                    ms.WriteByte((byte)iVal);
-                }
-                else
-                {
-                    ms.WriteByte((byte)iVal);
-                }
-            }  // end <0
-        }
-
-        public static byte[] SwapBytes(this byte[] v)
-        {
-            byte[] r = new byte[v.Length];
-            int j = v.Length - 1;
-            for (int i = 0; i < r.Length; i++)
-            {
-                r[i] = v[j];
-                j--;
-            }
-            return r;
-        }
-
-        public static byte[] FillBuffer(this Stream stream, long count)
-        {
-            byte[] buffer = new byte[count];
-            int index = 0;
-            int read = 0;
-            if (count > int.MaxValue)
-            {
-                read = FillBuffer_internal(stream, buffer, 0, int.MaxValue);
-                if (read != int.MaxValue)
-                    throw new InvalidDataException(EX_STREAMEND);
-                index = int.MaxValue;
-            }
-            read += FillBuffer_internal(stream, buffer, index, (int)(count - read));
-            if (read != count)
-                throw new InvalidDataException(EX_STREAMEND);
-            return buffer;
-        }
-        private static int FillBuffer_internal(Stream stream, byte[] buffer, int offset, int length)
-        {
-            int totalRead = 0;
-            while (length > 0)
-            {
-                var read = stream.Read(buffer, offset, length);
-                if (read == 0)
-                    return totalRead;
-                offset += read;
-                length -= read;
-                totalRead += read;
-            }
-            return totalRead;
-        }
-
-        public static async Task<byte[]> FillBufferAsync(this Stream stream, long count, CancellationToken token)
-        {
-            byte[] buffer = new byte[count];
-            int index = 0;
-            int read = 0;
-            if (count > int.MaxValue)
-            {
-                read = await FillBufferAsync_internal(stream, buffer, 0, int.MaxValue, token);
-                if (read != int.MaxValue)
-                    throw new InvalidDataException(EX_STREAMEND);
-                index = int.MaxValue;
-            }
-            read += await FillBufferAsync_internal(stream, buffer, index, (int)(count - read), token);
-            if (read != count)
-                throw new InvalidDataException(EX_STREAMEND);
-            return buffer;
-        }
-        private static async Task<int> FillBufferAsync_internal(Stream stream, byte[] buffer, int offset, int length, CancellationToken token)
-        {
-            int totalRead = 0;
-            while (length > 0 && !token.IsCancellationRequested)
-            {
-                var read = await stream.ReadAsync(buffer, offset, length, token);
-                if (read == 0)
-                    return totalRead;
-                offset += read;
-                length -= read;
-                totalRead += read;
-            }
-            return totalRead;
-        }
-    }
-
-    public sealed class MPackArray : MPack, IList<MPack>
-    {
-        public override object Value
-        {
-            get { return _collection; }
-        }
-        public override MsgPackType ValueType { get { return MsgPackType.Array; } }
-        private IList<MPack> _collection = new List<MPack>();
-
-        public MPackArray()
-        {
-        }
-        public MPackArray(IEnumerable<MPack> seed)
-        {
-            foreach (var v in seed)
-                _collection.Add(v);
-        }
-
-        public MPack this[int index]
-        {
-            get { return _collection[index]; }
-            set { _collection[index] = value; }
-        }
-        MPack IList<MPack>.this[int index]
-        {
-            get { return _collection[index]; }
-            set { _collection[index] = value; }
-        }
-        public int Count
-        {
-            get { return _collection.Count; }
-        }
-        public bool IsReadOnly
-        {
-            get { return false; }
-        }
-        public void Add(MPack item)
-        {
-            _collection.Add(item);
-        }
-        public void Clear()
-        {
-            _collection.Clear();
-        }
-        public bool Contains(MPack item)
-        {
-            return _collection.Contains(item);
-        }
-        public void CopyTo(MPack[] array, int arrayIndex)
-        {
-            _collection.CopyTo(array, arrayIndex);
-        }
-        public IEnumerator<MPack> GetEnumerator()
-        {
-            return _collection.GetEnumerator();
-        }
-        public int IndexOf(MPack item)
-        {
-            return _collection.IndexOf(item);
-        }
-        public void Insert(int index, MPack item)
-        {
-            _collection.Insert(index, item);
-        }
-        public bool Remove(MPack item)
-        {
-            return _collection.Remove(item);
-        }
-        public void RemoveAt(int index)
-        {
-            _collection.RemoveAt(index);
-        }
-        IEnumerator IEnumerable.GetEnumerator()
-        {
-            return _collection.GetEnumerator();
-        }
-
-        public override string ToString()
-        {
-            return String.Join(",", this.Select(v => v.ToString()));
-        }
-    }
-
-    public class MPackMap : MPack, IDictionary<string, MPack>
-    {
-        public int Count { get { return _collection.Count; } }
-
-        public bool IsReadOnly { get { return _collection.IsReadOnly; } }
-
-        public override object Value
-        {
-            get { return _collection; }
-        }
-        public override MsgPackType ValueType { get { return MsgPackType.Map; } }
-
-        private IDictionary<string, MPack> _collection;
-
-        public MPackMap()
-        {
-            _collection = new Dictionary<string, MPack>(StringComparer.InvariantCultureIgnoreCase);
-        }
-        public MPackMap(IDictionary<string, MPack> seed)
-        {
-            _collection = new Dictionary<string, MPack>(seed, StringComparer.InvariantCultureIgnoreCase);
-        }
-        public MPackMap(IEnumerable<KeyValuePair<string, MPack>> seed)
-        {
-            _collection = new Dictionary<string, MPack>(StringComparer.InvariantCultureIgnoreCase);
-            foreach (var v in seed)
-                _collection.Add(v);
-        }
-
-        public IEnumerator<KeyValuePair<string, MPack>> GetEnumerator()
-        {
-            return _collection.GetEnumerator();
-        }
-        IEnumerator IEnumerable.GetEnumerator()
-        {
-            return GetEnumerator();
-        }
-        public void Add(KeyValuePair<string, MPack> item)
-        {
-            _collection.Add(item);
-        }
-        public void Clear()
-        {
-            _collection.Clear();
-        }
-        public bool Contains(KeyValuePair<string, MPack> item)
-        {
-            return _collection.Contains(item);
-        }
-        public void CopyTo(KeyValuePair<string, MPack>[] array, int arrayIndex)
-        {
-            _collection.CopyTo(array, arrayIndex);
-        }
-        public bool Remove(KeyValuePair<string, MPack> item)
-        {
-            return _collection.Remove(item);
-        }
-        public bool ContainsKey(string key)
-        {
-            return _collection.ContainsKey(key);
-        }
-
-        public bool ContainsKeys(IEnumerable<string> keys)
-        {
-            return keys.All(ContainsKey);
-        }
-        public void Add(string key, MPack value)
-        {
-            _collection.Add(key, value);
-        }
-        public bool Remove(string key)
-        {
-            return _collection.Remove(key);
-        }
-        public bool TryGetValue(string key, out MPack value)
-        {
-            return _collection.TryGetValue(key, out value);
-        }
-        public MPack this[string key]
-        {
-            get { return _collection[key]; }
-            set { _collection[key] = value; }
-        }
-        public ICollection<string> Keys { get { return _collection.Keys; } }
-        public ICollection<MPack> Values { get { return _collection.Values; } }
-
-        public override string ToString()
-        {
-            return String.Join(",", this.Select(kvp => kvp.Key + ":" + kvp.Value.ToString()));
+            return To(conversionType);
         }
     }
 }

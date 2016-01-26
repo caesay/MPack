@@ -5,7 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace MPack.Tests
+namespace CS.MPackTests
 {
     public class Helpers
     {

@@ -7,7 +7,7 @@
     <ProjectGuid>{80B67925-AC57-46B2-BC37-1EBC0B5C521B}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>MPack</RootNamespace>
+    <RootNamespace>CS</RootNamespace>
     <AssemblyName>MPack</AssemblyName>
     <TargetFrameworkVersion>v4.5.2</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
@@ -40,11 +40,15 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="EndianBitConverter.cs" />
+    <Compile Include="Extensions.cs" />
     <Compile Include="MPack.cs" />
+    <Compile Include="MPackArray.cs" />
+    <Compile Include="MPackMap.cs" />
+    <Compile Include="Reader.cs" />
+    <Compile Include="MPackType.cs" />
+    <Compile Include="Writer.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="MPack.nuspec" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
