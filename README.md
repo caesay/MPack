@@ -66,5 +66,4 @@ Credits
 The following people/projects have made this possible:
 
 0. Me: [caelantsayler]at[gmail]dot[com]
-0. Jon Skeet: I borrowed a Big Endian BitConverter implementation from his misc util library here http://jonskeet.uk/csharp/miscutil/
 0. All of the people that make MessagePack happen: https://github.com/msgpack

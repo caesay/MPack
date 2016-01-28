@@ -10,7 +10,7 @@ namespace CS
     internal class Writer
     {
         private static Encoding _encoding = Encoding.UTF8;
-        private static BigEndianBitConverter _convert = EndianBitConverter.Big;
+        private static IBitConverter _convert = EndianBitConverter.Big;
 
         public static void EncodeToStream(Stream ms, MPack m)
         {

@@ -12,7 +12,7 @@ namespace CS
     {
         private static readonly FamilyReaderLookup _lookup = new FamilyReaderLookup();
         private static Encoding _encoding = Encoding.UTF8;
-        private static BigEndianBitConverter _convert = EndianBitConverter.Big;
+        private static IBitConverter _convert = EndianBitConverter.Big;
 
         static Reader()
         {
