@@ -95,7 +95,7 @@ namespace CS
                 throw new ArgumentNullException(nameof(buffer));
             if (index < 0)
                 throw new ArgumentOutOfRangeException(nameof(index));
-            if (index + bytes < buffer.Length)
+            if (index + bytes > buffer.Length)
                 throw new ArgumentOutOfRangeException(nameof(bytes));
 
             return FromBytesImpl(buffer, index, bytes);
