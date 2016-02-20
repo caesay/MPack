@@ -93,7 +93,9 @@ namespace CS.MPackTests
                 {"double1", MPack.From(50.5)},
                 {"double2", MPack.From(15.2)},
                 {"int1", MPack.From(50505)},
-                {"int2", MPack.From(50)}
+                {"int2", MPack.From(50)},
+                {3.14, MPack.From(3.14)},
+                {42, MPack.From(42)}
             };
             
             var bytes = dictionary.EncodeToBytes();
