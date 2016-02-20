@@ -58,7 +58,7 @@ namespace CS
                 throw new NotSupportedException("Array indexor not supported in this context.");
             }
         }
-        public virtual MPack this[string key]
+        public virtual MPack this[MPack key]
         {
             get
             {

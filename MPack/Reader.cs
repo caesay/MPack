@@ -28,7 +28,7 @@ namespace CS
                 int len = b - 0x80;
                 for (int i = 0; i < len; i++)
                 {
-                    map.Add(ReadString((byte)s.ReadByte(), s), ParseFromStream(s));
+                    map.Add(ParseFromStream(s), ParseFromStream(s));
                 }
                 return map;
             }, async (b, s, c) =>
@@ -37,7 +37,7 @@ namespace CS
                 int len = b - 0x80;
                 for (int i = 0; i < len; i++)
                 {
-                    map.Add(await ReadStringAsync(await s.ReadByteAsync(c), s, c), await ParseFromStreamAsync(s, c));
+                    map.Add(await ParseFromStreamAsync(s, c), await ParseFromStreamAsync(s, c));
                 }
                 return map;
             });

@@ -82,9 +82,9 @@ namespace CS
                 stream.Write(lenBytes, 0, lenBytes.Length);
             }
 
-            foreach (KeyValuePair<string, MPack> child in map)
+            foreach (KeyValuePair<MPack, MPack> child in map)
             {
-                WriteString(stream, child.Key);
+                EncodeToStream(stream, child.Key);
                 EncodeToStream(stream, child.Value);
             }
         }
