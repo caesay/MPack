@@ -1,13 +1,13 @@
 ﻿using System;
 using System.Linq;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NUnit.Framework;
 
 namespace CS.MPackTests
 {
-    [TestClass]
+    [TestFixture()]
     public class Tests
     {
-        [TestMethod]
+        [Test()]
         public void TestDouble()
         {
             var tests = new[]
@@ -31,12 +31,12 @@ namespace CS.MPackTests
             }
         }
 
-        [TestMethod]
+        [Test()]
         public void TestNull()
         {
             Assert.AreEqual(null, MPack.ParseFromBytes(MPack.Null().EncodeToBytes()).To<object>());
         }
-        [TestMethod]
+        [Test()]
         public void TestString()
         {
             var tests = new string[]
@@ -53,7 +53,7 @@ namespace CS.MPackTests
                 Assert.AreEqual(value, MPack.ParseFromBytes(MPack.From(value).EncodeToBytes()).To<string>());
             }
         }
-        [TestMethod]
+        [Test()]
         public void TestInteger()
         {
             var tests = new[]
@@ -76,7 +76,7 @@ namespace CS.MPackTests
                 Assert.AreEqual(value, MPack.ParseFromBytes(MPack.From(value).EncodeToBytes()).To<long>());
             }
         }
-        [TestMethod]
+        [Test()]
         public void TestMap()
         {
             MPackMap dictionary = new MPackMap
@@ -100,7 +100,7 @@ namespace CS.MPackTests
             var result = MPack.ParseFromBytes(bytes) as MPackMap;
             Assert.AreEqual(dictionary, result);
         }
-        [TestMethod]
+        [Test()]
         public void TestArray()
         {
             var tests = new[]
@@ -128,7 +128,7 @@ namespace CS.MPackTests
             }
             Assert.AreEqual(arr, round);
         }
-        [TestMethod]
+        [Test()]
         public void TestUInt64()
         {
             var tests = new[]
@@ -141,7 +141,7 @@ namespace CS.MPackTests
                 Assert.AreEqual(value, MPack.ParseFromBytes(MPack.From(value).EncodeToBytes()).To<ulong>());
             }
         }
-        [TestMethod]
+        [Test()]
         public void TestBoolean()
         {
             var tru = MPack.ParseFromBytes(MPack.From(true).EncodeToBytes()).To<bool>();
@@ -149,7 +149,7 @@ namespace CS.MPackTests
             Assert.IsTrue(tru);
             Assert.IsFalse(fal);
         }
-        [TestMethod]
+        [Test()]
         public void TestSingle()
         {
             var tests = new[]
@@ -168,7 +168,7 @@ namespace CS.MPackTests
                 Assert.AreEqual(value, MPack.ParseFromBytes(MPack.From(value).EncodeToBytes()).To<float>());
             }
         }
-        [TestMethod]
+        [Test()]
         public void TestBinary()
         {
             var tests = new[]
