@@ -51,14 +51,19 @@ namespace CS
         {
             get
             {
+                if (this is MPackMap)
+                    return this[(MPack)index];
                 throw new NotSupportedException("Array indexor not supported in this context.");
             }
             set
             {
-                throw new NotSupportedException("Array indexor not supported in this context.");
+                if (this is MPackMap)
+                    this[(MPack)index] = value;
+                else
+                    throw new NotSupportedException("Array indexor not supported in this context.");
             }
         }
-        public virtual MPack this[string key]
+        public virtual MPack this[MPack key]
         {
             get
             {
@@ -74,12 +79,19 @@ namespace CS
         {
             return new MPack() { _type = MPackType.Null };
         }
+
         public static MPack From(object value)
+        {
+            return From(value, value.GetType());
+        }
+
+        public static MPack From(object value, Type type)
         {
             if (value == null)
                 return new MPack(null, MPackType.Null);
 
-            var type = value.GetType();
+            if(!type.IsInstanceOfType(value))
+                throw new ArgumentException("Type does not match provided object.");
             if (type.IsArray)
             {
                 var elementType = type.GetElementType();
@@ -335,7 +347,7 @@ namespace CS
 
         TypeCode IConvertible.GetTypeCode()
         {
-            if(ValueType == MPackType.Null)
+            if (ValueType == MPackType.Null)
                 return TypeCode.Object;
             return Type.GetTypeCode(Value.GetType());
         }

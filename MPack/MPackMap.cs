@@ -7,39 +7,39 @@ using System.Threading.Tasks;
 
 namespace CS
 {
-    public class MPackMap : MPack, IDictionary<string, MPack>
+    public class MPackMap : MPack, IDictionary<MPack, MPack>
     {
         public int Count { get { return _collection.Count; } }
         public bool IsReadOnly { get { return _collection.IsReadOnly; } }
-        public ICollection<string> Keys { get { return _collection.Keys; } }
+        public ICollection<MPack> Keys { get { return _collection.Keys; } }
         public ICollection<MPack> Values { get { return _collection.Values; } }
         public override object Value { get { return _collection; } }
         public override MPackType ValueType { get { return MPackType.Map; } }
 
-        private IDictionary<string, MPack> _collection;
+        private IDictionary<MPack, MPack> _collection;
 
         public MPackMap()
         {
-            _collection = new Dictionary<string, MPack>(StringComparer.InvariantCultureIgnoreCase);
+            _collection = new Dictionary<MPack, MPack>();
         }
-        public MPackMap(IDictionary<string, MPack> seed)
+        public MPackMap(IDictionary<MPack, MPack> seed)
         {
-            _collection = new Dictionary<string, MPack>(seed, StringComparer.InvariantCultureIgnoreCase);
+            _collection = new Dictionary<MPack, MPack>(seed);
         }
-        public MPackMap(IEnumerable<KeyValuePair<string, MPack>> seed)
+        public MPackMap(IEnumerable<KeyValuePair<MPack, MPack>> seed)
         {
-            _collection = new Dictionary<string, MPack>(StringComparer.InvariantCultureIgnoreCase);
+            _collection = new Dictionary<MPack, MPack>();
             foreach (var v in seed)
                 _collection.Add(v);
         }
 
-        public override MPack this[string key]
+        public override MPack this[MPack key]
         {
             get { return _collection[key]; }
             set { _collection[key] = value; }
         }
 
-        public IEnumerator<KeyValuePair<string, MPack>> GetEnumerator()
+        public IEnumerator<KeyValuePair<MPack, MPack>> GetEnumerator()
         {
             return _collection.GetEnumerator();
         }
@@ -47,7 +47,7 @@ namespace CS
         {
             return GetEnumerator();
         }
-        public void Add(KeyValuePair<string, MPack> item)
+        public void Add(KeyValuePair<MPack, MPack> item)
         {
             _collection.Add(item);
         }
@@ -55,42 +55,42 @@ namespace CS
         {
             _collection.Clear();
         }
-        public bool Contains(KeyValuePair<string, MPack> item)
+        public bool Contains(KeyValuePair<MPack, MPack> item)
         {
             return _collection.Contains(item);
         }
-        public void CopyTo(KeyValuePair<string, MPack>[] array, int arrayIndex)
+        public void CopyTo(KeyValuePair<MPack, MPack>[] array, int arrayIndex)
         {
             _collection.CopyTo(array, arrayIndex);
         }
-        public bool Remove(KeyValuePair<string, MPack> item)
+        public bool Remove(KeyValuePair<MPack, MPack> item)
         {
             return _collection.Remove(item);
         }
-        public bool ContainsKey(string key)
+        public bool ContainsKey(MPack key)
         {
             return _collection.ContainsKey(key);
         }
-        public bool ContainsKeys(IEnumerable<string> keys)
+        public bool ContainsKeys(IEnumerable<MPack> keys)
         {
             return keys.All(ContainsKey);
         }
-        public void Add(string key, MPack value)
+        public void Add(MPack key, MPack value)
         {
             _collection.Add(key, value);
         }
-        public bool Remove(string key)
+        public bool Remove(MPack key)
         {
             return _collection.Remove(key);
         }
-        public bool TryGetValue(string key, out MPack value)
+        public bool TryGetValue(MPack key, out MPack value)
         {
             return _collection.TryGetValue(key, out value);
         }
 
         public override string ToString()
         {
-            return String.Join(",", this.Select(kvp => kvp.Key + ":" + kvp.Value.ToString()));
+            return String.Join(",", this.Select(kvp => kvp.Key.ToString() + ":" + kvp.Value.ToString()));
         }
     }
 
