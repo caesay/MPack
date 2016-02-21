@@ -79,12 +79,19 @@ namespace CS
         {
             return new MPack() { _type = MPackType.Null };
         }
+
         public static MPack From(object value)
+        {
+            return From(value, value.GetType());
+        }
+
+        public static MPack From(object value, Type type)
         {
             if (value == null)
                 return new MPack(null, MPackType.Null);
 
-            var type = value.GetType();
+            if(!type.IsInstanceOfType(value))
+                throw new ArgumentException("Type does not match provided object.");
             if (type.IsArray)
             {
                 var elementType = type.GetElementType();
