@@ -44,7 +44,7 @@ namespace CS
                     WriteMap(ms, m);
                     break;
                 case MPackType.Array:
-                    WirteArray(ms, m);
+                    WriteArray(ms, m);
                     break;
                 default:
                     WriteNull(ms);
@@ -88,7 +88,7 @@ namespace CS
                 EncodeToStream(stream, child.Value);
             }
         }
-        private static void WirteArray(Stream ms, MPack mpack)
+        private static void WriteArray(Stream ms, MPack mpack)
         {
             MPackArray list = mpack as MPackArray;
             if (list == null)
@@ -235,9 +235,28 @@ namespace CS
         }
         private static void WriteInteger(Stream ms, ulong val)
         {
-            ms.WriteByte(0xCF);
-            byte[] dataBytes = _convert.GetBytes(val);
-            ms.Write(dataBytes, 0, 8);
+            if (val <= 127) // fixedval
+                ms.WriteByte((byte)val);
+            else if (val <= 255) // uint8
+            {
+                ms.WriteByte(0xCC);
+                ms.WriteByte((byte)val);
+            }
+            else if (val <= 0xFFFF)
+            {
+                ms.WriteByte(0xCD);
+                ms.Write(_convert.GetBytes((UInt16)val), 0, 2);
+            }
+            else if (val <= 0xFFFFFFFF)
+            {
+                ms.WriteByte(0xCE);
+                ms.Write(_convert.GetBytes((UInt32)val), 0, 4);
+            }
+            else
+            {
+                ms.WriteByte(0xCF);
+                ms.Write(_convert.GetBytes(val), 0, 8);
+            }
         }
         private static void WriteInteger(Stream ms, long iVal)
         {
@@ -263,7 +282,7 @@ namespace CS
                     ms.Write(_convert.GetBytes((Int32)iVal), 0, 4);
                 }
                 else
-                {  //UInt64
+                {  //Int64
                     ms.WriteByte(0xD3);
                     ms.Write(_convert.GetBytes(iVal), 0, 8);
                 }
@@ -285,7 +304,7 @@ namespace CS
                     ms.WriteByte(0xD1);
                     ms.Write(_convert.GetBytes((Int16)iVal), 0, 2);
                 }
-                else if (iVal <= -32)
+                else if (iVal < -32)
                 {
                     ms.WriteByte(0xD0);
                     ms.WriteByte((byte)iVal);

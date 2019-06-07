@@ -3,3 +3,8 @@
 ################################################################################
 
 /.vs
+/MPack/bin/Debug
+/MPack/obj
+/MPack.Tests/bin/Debug
+/MPack.Tests/obj
+/packages
