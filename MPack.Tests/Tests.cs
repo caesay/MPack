@@ -192,6 +192,8 @@ namespace CS.MPackTests
         {
             Assert.IsTrue(Enumerable.SequenceEqual(MPack.From(127).EncodeToBytes(), new byte[] { 0b01111111 }), "127");
             Assert.IsTrue(Enumerable.SequenceEqual(MPack.From(0xFF).EncodeToBytes(), new byte[] { 0xCC, 0xFF }), "255");
+            Assert.IsTrue(Enumerable.SequenceEqual(MPack.From(0x7FFF).EncodeToBytes(), new byte[] { 0xD1, 0x7F, 0xFF }), "0x7FFF");
+            Assert.IsTrue(Enumerable.SequenceEqual(MPack.From((UInt16)0x7FFF).EncodeToBytes(), new byte[] { 0xCD, 0x7F, 0xFF }), "(UInt16)0x7FFF");
             Assert.IsTrue(Enumerable.SequenceEqual(MPack.From(0xFFFF).EncodeToBytes(), new byte[] { 0xCD, 0xFF, 0xFF }), "0xFFFF");
             Assert.IsTrue(Enumerable.SequenceEqual(MPack.From(0xFFFFFFFF).EncodeToBytes(), new byte[] { 0xCE, 0xFF, 0xFF, 0xFF, 0xFF }), "0xFFFFFFFF");
             Assert.IsTrue(Enumerable.SequenceEqual(MPack.From(-32).EncodeToBytes(), new byte[] { 0b11100000 }), "-32");

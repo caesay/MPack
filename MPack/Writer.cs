@@ -9,8 +9,8 @@ namespace CS
 {
     internal class Writer
     {
-        private static Encoding _encoding = Encoding.UTF8;
-        private static IBitConverter _convert = EndianBitConverter.Big;
+        private static readonly Encoding _encoding = Encoding.UTF8;
+        private static readonly IBitConverter _convert = EndianBitConverter.Big;
 
         public static void EncodeToStream(Stream ms, MPack m)
         {
@@ -157,9 +157,9 @@ namespace CS
             //* N is the length of data
 
             byte[] rawBytes = _encoding.GetBytes(strVal);
-            byte[] lenBytes = null;
             int len = rawBytes.Length;
-            byte b = 0;
+            byte[] lenBytes;
+            byte b;
             if (len <= 31)
             {
                 b = (byte)(0xA0 + (byte)len);
@@ -190,9 +190,9 @@ namespace CS
         }
         private static void WriteBinary(Stream ms, byte[] rawBytes)
         {
-            byte[] lenBytes = null;
             int len = rawBytes.Length;
-            byte b = 0;
+            byte[] lenBytes;
+            byte b;
             if (len <= 255)
             {
                 b = 0xC4;
@@ -271,10 +271,22 @@ namespace CS
                     ms.WriteByte(0xCC);
                     ms.WriteByte((byte)iVal);
                 }
+                else if (iVal <= 0x7FFF)
+                {
+                    // Int16
+                    ms.WriteByte(0xD1);
+                    ms.Write(_convert.GetBytes((Int16)iVal), 0, 2);
+                }
                 else if (iVal <= 0xFFFF)
                 {  //UInt16
                     ms.WriteByte(0xCD);
                     ms.Write(_convert.GetBytes((Int16)iVal), 0, 2);
+                }
+                else if (iVal <= 0x7FFFFFFF)
+                {
+                    // Int32
+                    ms.WriteByte(0xD2);
+                    ms.Write(_convert.GetBytes((Int32)iVal), 0, 4);
                 }
                 else if (iVal <= 0xFFFFFFFF)
                 {  //UInt32
