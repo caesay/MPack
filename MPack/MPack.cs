@@ -229,6 +229,7 @@ namespace CS
         public static implicit operator MPack(sbyte value) { return From(value); }
         public static implicit operator MPack(short value) { return From(value); }
         public static implicit operator MPack(int value) { return From(value); }
+        public static implicit operator MPack(long value) { return From(value); }
         public static implicit operator MPack(string value) { return From(value); }
         public static implicit operator MPack(byte[] value) { return From(value); }
         public static implicit operator MPack(MPack[] value) { return From(value); }
@@ -243,6 +244,7 @@ namespace CS
         public static explicit operator sbyte(MPack value) { return value.To<sbyte>(); }
         public static explicit operator short(MPack value) { return value.To<short>(); }
         public static explicit operator int(MPack value) { return value.To<int>(); }
+        public static explicit operator long(MPack value) { return value.To<long>(); }
         public static explicit operator string(MPack value) { return value.To<string>(); }
         public static explicit operator byte[](MPack value) { return value.To<byte[]>(); }
         public static explicit operator MPack[](MPack value) { return value.To<MPack[]>(); }

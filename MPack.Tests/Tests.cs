@@ -196,6 +196,9 @@ namespace CS.MPackTests
             Assert.IsTrue(Enumerable.SequenceEqual(MPack.From((UInt16)0x7FFF).EncodeToBytes(), new byte[] { 0xCD, 0x7F, 0xFF }), "(UInt16)0x7FFF");
             Assert.IsTrue(Enumerable.SequenceEqual(MPack.From(0xFFFF).EncodeToBytes(), new byte[] { 0xCD, 0xFF, 0xFF }), "0xFFFF");
             Assert.IsTrue(Enumerable.SequenceEqual(MPack.From(0xFFFFFFFF).EncodeToBytes(), new byte[] { 0xCE, 0xFF, 0xFF, 0xFF, 0xFF }), "0xFFFFFFFF");
+            Assert.IsTrue(Enumerable.SequenceEqual(((MPack)0xF_FFFF_FFFF).EncodeToBytes(), new byte[] { 0xD3, 0x00, 0x00, 0x00, 0x0F, 0xFF, 0xFF, 0xFF, 0xFF }), "0xF_FFFF_FFFF");
+            Assert.IsTrue(Enumerable.SequenceEqual(((MPack)(ulong)0xF_FFFF_FFFF).EncodeToBytes(), new byte[] { 0xCF, 0x00, 0x00, 0x00, 0x0F, 0xFF, 0xFF, 0xFF, 0xFF }), "(ulong)0xF_FFFF_FFFF");
+            Assert.IsTrue(Enumerable.SequenceEqual(MPack.From(0x8000_0000_FFFF_FFFF).EncodeToBytes(), new byte[] { 0xCF, 0x80, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF }), "0x8000_0000_FFFF_FFFF");
             Assert.IsTrue(Enumerable.SequenceEqual(MPack.From(-32).EncodeToBytes(), new byte[] { 0b11100000 }), "-32");
             Assert.IsTrue(Enumerable.SequenceEqual(MPack.From(-33).EncodeToBytes(), new byte[] { 0xD0, 0xDF }), "-33");
             Assert.IsTrue(Enumerable.SequenceEqual(MPack.From(-127).EncodeToBytes(), new byte[] { 0xD0, 0x81 }), "-127");
