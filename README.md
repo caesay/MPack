@@ -2,22 +2,22 @@ MPack
 =====
 This library is a lightweight implementation of the [MessagePack](http://msgpack.org/) binary serialization format. MessagePack is a 1-to-1 binary representation of JSON, and the official specification can be found here: [https://github.com/msgpack...](https://github.com/msgpack/msgpack/blob/master/spec.md).
 
-![Build status](https://ci.appveyor.com/api/projects/status/84jv0lllniqsicpb?svg=true) (https://ci.appveyor.com/project/caesay/mpack)
+[![Build status](https://ci.appveyor.com/api/projects/status/d5d1ry9a53x6vaqu?svg=true)](https://ci.appveyor.com/project/bcristian/mpack)
 
 Notes
 -----
-* This library is designed to be super light weight.
-* Its easiest to understand how this library works if you think in terms of json. The type `MPackMap` represents a dictionary, and the type `MPackArray` represents an array. 
-* Create MPack instances with the static method `MPack.From(object);`. You can pass any simple type (such as string, integer, etc), or any Array composed of a simple type. MPack also has implicit conversions from most of the basic types built in.
-* Transform an MPack object back into a CLR type with the static method `MPack.To<T>();` or MPack.To(type);. MPack also has **explicit** converions going back to most basic types, you can do `string str = (string)mpack;` for instance.
-* MPack now supports native asynchrounous reading and cancellation tokens. It will *not* block a thread to wait on a stream.
+* This is my fork of https://github.com/caesay/MPack
+* The original serialized all unsigned integers as UInt64, and had a few more issues with integer ranges and conversions.
+* The issues did not cause data loss or corruption, but meant that sometimes more bytes than needed were used, and shape checking (e.g. as part of a protocol validation) was hindered.
+* Major points from the original:
+    * Its easiest to understand how this library works if you think in terms of json. The type `MPackMap` represents a dictionary, and the type `MPackArray` represents an array. 
+    * Create MPack instances with the static method `MPack.From(object);`. You can pass any simple type (such as string, integer, etc), or any Array composed of a simple type. MPack also has implicit conversions from most of the basic types built in.
+    * Transform an MPack object back into a CLR type with the static method `MPack.To<T>();` or MPack.To(type);. MPack also has **explicit** converions going back to most basic types, you can do `string str = (string)mpack;` for instance.
+    * MPack now supports native asynchrounous reading and cancellation tokens. It will *not* block a thread to wait on a stream.
 
 NuGet
 -----
-MPack is available as a NuGet package!
-```
-PM> Install-Package MPack
-```
+This version is not published on nuget.
 
 Usage
 -----
@@ -65,5 +65,6 @@ Credits
 -------
 The following people/projects have made this possible:
 
-0. Me: [caelantsayler]at[gmail]dot[com]
+0. Caelan Sayler, the one I forked from: [caelantsayler]at[gmail]dot[com]
 0. All of the people that make MessagePack happen: https://github.com/msgpack
+0. Me
