@@ -20,50 +20,47 @@
 ///////////////////////////////////////////////////////////////////////////////////////////////
 
 using System;
-using System.Collections;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace CS
+namespace MPack
 {
-    public class MPack : IEquatable<MPack>, IConvertible, IComparable<MPack>
+    public class MToken : IEquatable<MToken>, IConvertible, IComparable<MToken>
     {
         public virtual object Value { get { return _value; } }
-        public virtual MPackType ValueType { get { return _type; } }
+        public virtual MTokenType ValueType { get { return _type; } }
 
-        internal MPack(object value, MPackType type)
+        internal MToken(object value, MTokenType type)
         {
             _value = value;
             _type = type;
         }
-        protected MPack()
+        protected MToken()
         {
         }
 
         private object _value = null;
-        private MPackType _type = MPackType.Null;
+        private MTokenType _type = MTokenType.Null;
 
-        public virtual MPack this[int index]
+        public virtual MToken this[int index]
         {
             get
             {
-                if (this is MPackMap)
-                    return this[(MPack)index];
+                if (this is MDict)
+                    return this[(MToken)index];
                 throw new NotSupportedException("Array indexor not supported in this context.");
             }
             set
             {
-                if (this is MPackMap)
-                    this[(MPack)index] = value;
+                if (this is MDict)
+                    this[(MToken)index] = value;
                 else
                     throw new NotSupportedException("Array indexor not supported in this context.");
             }
         }
-        public virtual MPack this[MPack key]
+        public virtual MToken this[MToken key]
         {
             get
             {
@@ -75,20 +72,20 @@ namespace CS
             }
         }
 
-        public static MPack Null()
+        public static MToken Null()
         {
-            return new MPack() { _type = MPackType.Null };
+            return new MToken() { _type = MTokenType.Null };
         }
 
-        public static MPack From(object value)
+        public static MToken From(object value)
         {
             return From(value, value.GetType());
         }
 
-        public static MPack From(object value, Type type)
+        public static MToken From(object value, Type type)
         {
             if (value == null)
-                return new MPack(null, MPackType.Null);
+                return new MToken(null, MTokenType.Null);
 
             if (!type.IsInstanceOfType(value))
                 throw new ArgumentException("Type does not match provided object.");
@@ -96,15 +93,15 @@ namespace CS
             {
                 var elementType = type.GetElementType();
                 if (elementType == typeof(byte))
-                    return new MPack(value, MPackType.Binary);
-                if (elementType == typeof(MPack))
-                    return new MPackArray((MPack[])value);
+                    return new MToken(value, MTokenType.Binary);
+                if (elementType == typeof(MToken))
+                    return new MArray((MToken[])value);
 
                 var elementTypeCode = (int)Type.GetTypeCode(elementType);
                 if (elementTypeCode <= 2 || elementTypeCode == 16)
                     throw new NotSupportedException(String.Format("The specified array type ({0}) is not supported by MsgPack", elementType.Name));
 
-                MPackArray resultArray = new MPackArray();
+                MArray resultArray = new MArray();
                 Array inputArray = (Array)value;
                 foreach (var obj in inputArray)
                 {
@@ -117,40 +114,40 @@ namespace CS
             switch (code)
             {
                 case TypeCode.Boolean:
-                    return new MPack(value, MPackType.Bool);
+                    return new MToken(value, MTokenType.Bool);
                 case TypeCode.Char:
-                    return new MPack(value, MPackType.UInt);
+                    return new MToken(value, MTokenType.UInt);
                 case TypeCode.SByte:
-                    return new MPack(value, MPackType.SInt);
+                    return new MToken(value, MTokenType.SInt);
                 case TypeCode.Byte:
-                    return new MPack(value, MPackType.UInt);
+                    return new MToken(value, MTokenType.UInt);
                 case TypeCode.Int16:
-                    return new MPack(value, MPackType.SInt);
+                    return new MToken(value, MTokenType.SInt);
                 case TypeCode.UInt16:
-                    return new MPack(value, MPackType.UInt);
+                    return new MToken(value, MTokenType.UInt);
                 case TypeCode.Int32:
-                    return new MPack(value, MPackType.SInt);
+                    return new MToken(value, MTokenType.SInt);
                 case TypeCode.UInt32:
-                    return new MPack(value, MPackType.UInt);
+                    return new MToken(value, MTokenType.UInt);
                 case TypeCode.Int64:
-                    return new MPack(value, MPackType.SInt);
+                    return new MToken(value, MTokenType.SInt);
                 case TypeCode.UInt64:
-                    return new MPack(value, MPackType.UInt);
+                    return new MToken(value, MTokenType.UInt);
                 case TypeCode.Single:
-                    return new MPack(value, MPackType.Single);
+                    return new MToken(value, MTokenType.Single);
                 case TypeCode.Double:
-                    return new MPack(value, MPackType.Double);
+                    return new MToken(value, MTokenType.Double);
                 case TypeCode.Decimal:
-                    return new MPack((double)(decimal)value, MPackType.Double);
+                    return new MToken((double)(decimal)value, MTokenType.Double);
                 case TypeCode.String:
-                    return new MPack(value, MPackType.String);
+                    return new MToken(value, MTokenType.String);
             }
             throw new NotSupportedException("Tried to create MPack object from unsupported type: " + type.Name);
         }
 
         public object To(Type t)
         {
-            if (ValueType == MPackType.Null)
+            if (ValueType == MTokenType.Null)
                 return null;
             if (t == typeof(object))
                 return Value;
@@ -171,12 +168,12 @@ namespace CS
                     throw new NotSupportedException(String.Format("Casting to an array of type {0} is not supported.",
                         elementType.Name));
 
-                var mpackArray = Value as MPackArray;
+                var mpackArray = Value as MArray;
                 if (mpackArray == null)
                     throw new ArgumentException(String.Format("Cannot conver MPack type {0} into type {1} (it is not an array).",
                         ValueType, t.Name));
 
-                if (elementType == typeof(MPack))
+                if (elementType == typeof(MToken))
                     return mpackArray.ToArray();
 
                 var count = mpackArray.Count;
@@ -204,14 +201,14 @@ namespace CS
             }
         }
 
-        public static bool operator ==(MPack m1, MPack m2)
+        public static bool operator ==(MToken m1, MToken m2)
         {
             if (ReferenceEquals(m1, m2)) return true;
             if (!ReferenceEquals(m1, null))
                 return m1.Equals(m2);
             return false;
         }
-        public static bool operator !=(MPack m1, MPack m2)
+        public static bool operator !=(MToken m1, MToken m2)
         {
             if (ReferenceEquals(m1, m2)) return false;
             if (!ReferenceEquals(m1, null))
@@ -219,50 +216,50 @@ namespace CS
             return true;
         }
 
-        public static implicit operator MPack(bool value) { return From(value); }
-        public static implicit operator MPack(float value) { return From(value); }
-        public static implicit operator MPack(double value) { return From(value); }
-        public static implicit operator MPack(byte value) { return From(value); }
-        public static implicit operator MPack(ushort value) { return From(value); }
-        public static implicit operator MPack(uint value) { return From(value); }
-        public static implicit operator MPack(ulong value) { return From(value); }
-        public static implicit operator MPack(sbyte value) { return From(value); }
-        public static implicit operator MPack(short value) { return From(value); }
-        public static implicit operator MPack(int value) { return From(value); }
-        public static implicit operator MPack(long value) { return From(value); }
-        public static implicit operator MPack(string value) { return From(value); }
-        public static implicit operator MPack(byte[] value) { return From(value); }
-        public static implicit operator MPack(MPack[] value) { return From(value); }
+        public static implicit operator MToken(bool value) { return From(value); }
+        public static implicit operator MToken(float value) { return From(value); }
+        public static implicit operator MToken(double value) { return From(value); }
+        public static implicit operator MToken(byte value) { return From(value); }
+        public static implicit operator MToken(ushort value) { return From(value); }
+        public static implicit operator MToken(uint value) { return From(value); }
+        public static implicit operator MToken(ulong value) { return From(value); }
+        public static implicit operator MToken(sbyte value) { return From(value); }
+        public static implicit operator MToken(short value) { return From(value); }
+        public static implicit operator MToken(int value) { return From(value); }
+        public static implicit operator MToken(long value) { return From(value); }
+        public static implicit operator MToken(string value) { return From(value); }
+        public static implicit operator MToken(byte[] value) { return From(value); }
+        public static implicit operator MToken(MToken[] value) { return From(value); }
 
-        public static explicit operator bool(MPack value) { return value.To<bool>(); }
-        public static explicit operator float(MPack value) { return value.To<float>(); }
-        public static explicit operator double(MPack value) { return value.To<double>(); }
-        public static explicit operator byte(MPack value) { return value.To<byte>(); }
-        public static explicit operator ushort(MPack value) { return value.To<ushort>(); }
-        public static explicit operator uint(MPack value) { return value.To<uint>(); }
-        public static explicit operator ulong(MPack value) { return value.To<ulong>(); }
-        public static explicit operator sbyte(MPack value) { return value.To<sbyte>(); }
-        public static explicit operator short(MPack value) { return value.To<short>(); }
-        public static explicit operator int(MPack value) { return value.To<int>(); }
-        public static explicit operator long(MPack value) { return value.To<long>(); }
-        public static explicit operator string(MPack value) { return value.To<string>(); }
-        public static explicit operator byte[](MPack value) { return value.To<byte[]>(); }
-        public static explicit operator MPack[](MPack value) { return value.To<MPack[]>(); }
+        public static explicit operator bool(MToken value) { return value.To<bool>(); }
+        public static explicit operator float(MToken value) { return value.To<float>(); }
+        public static explicit operator double(MToken value) { return value.To<double>(); }
+        public static explicit operator byte(MToken value) { return value.To<byte>(); }
+        public static explicit operator ushort(MToken value) { return value.To<ushort>(); }
+        public static explicit operator uint(MToken value) { return value.To<uint>(); }
+        public static explicit operator ulong(MToken value) { return value.To<ulong>(); }
+        public static explicit operator sbyte(MToken value) { return value.To<sbyte>(); }
+        public static explicit operator short(MToken value) { return value.To<short>(); }
+        public static explicit operator int(MToken value) { return value.To<int>(); }
+        public static explicit operator long(MToken value) { return value.To<long>(); }
+        public static explicit operator string(MToken value) { return value.To<string>(); }
+        public static explicit operator byte[](MToken value) { return value.To<byte[]>(); }
+        public static explicit operator MToken[](MToken value) { return value.To<MToken[]>(); }
 
-        public static MPack ParseFromBytes(byte[] array)
+        public static MToken ParseFromBytes(byte[] array)
         {
             using (MemoryStream ms = new MemoryStream(array))
                 return ParseFromStream(ms);
         }
-        public static MPack ParseFromStream(Stream stream)
+        public static MToken ParseFromStream(Stream stream)
         {
             return Reader.ParseFromStream(stream);
         }
-        public static Task<MPack> ParseFromStreamAsync(Stream stream)
+        public static Task<MToken> ParseFromStreamAsync(Stream stream)
         {
             return ParseFromStreamAsync(stream, CancellationToken.None);
         }
-        public static Task<MPack> ParseFromStreamAsync(Stream stream, CancellationToken token)
+        public static Task<MToken> ParseFromStreamAsync(Stream stream, CancellationToken token)
         {
             return Reader.ParseFromStreamAsync(stream, token);
         }
@@ -294,31 +291,31 @@ namespace CS
             }
         }
 
-        public bool Equals(MPack other)
+        public bool Equals(MToken other)
         {
             if (ReferenceEquals(other, null))
                 return false;
 
-            if (this is MPackArray && other is MPackArray)
+            if (this is MArray && other is MArray)
             {
-                var ob1 = (MPackArray)this;
-                var ob2 = (MPackArray)other;
+                var ob1 = (MArray)this;
+                var ob2 = (MArray)other;
                 if (ob1.Count == ob2.Count)
                 {
                     return ob1.SequenceEqual(ob2);
                 }
             }
-            else if (this is MPackMap && other is MPackMap)
+            else if (this is MDict && other is MDict)
             {
-                var ob1 = (MPackMap)this;
-                var ob2 = (MPackMap)other;
+                var ob1 = (MDict)this;
+                var ob2 = (MDict)other;
                 if (ob1.Count == ob2.Count)
                 {
                     return ob1.OrderBy(r => r.Key).SequenceEqual(ob2.OrderBy(r => r.Key));
                 }
             }
-            else if ((this.ValueType == MPackType.SInt || this.ValueType == MPackType.UInt) &&
-                     (other.ValueType == MPackType.SInt || other.ValueType == MPackType.UInt))
+            else if ((this.ValueType == MTokenType.SInt || this.ValueType == MTokenType.UInt) &&
+                     (other.ValueType == MTokenType.SInt || other.ValueType == MTokenType.UInt))
             {
                 decimal xd = Convert.ToDecimal(Value);
                 decimal yd = Convert.ToDecimal(other.Value);
@@ -332,8 +329,8 @@ namespace CS
         {
             if (ReferenceEquals(null, obj)) return false;
             if (ReferenceEquals(this, obj)) return true;
-            if (obj is MPack)
-                return Equals((MPack)obj);
+            if (obj is MToken)
+                return Equals((MToken)obj);
             return false;
         }
         public override int GetHashCode()
@@ -349,7 +346,7 @@ namespace CS
 
         TypeCode IConvertible.GetTypeCode()
         {
-            if (ValueType == MPackType.Null)
+            if (ValueType == MTokenType.Null)
                 return TypeCode.Object;
             return Type.GetTypeCode(Value.GetType());
         }
@@ -418,12 +415,12 @@ namespace CS
             return To(conversionType);
         }
 
-        public int CompareTo(MPack other)
+        public int CompareTo(MToken other)
         {
             // This interface is meant to be used when we need to order a MPackMap by its keys.
             // Only makes sense for numeric and string types.
             // Since we can mix numeric and string keys, we choose that numerics come before strings.
-            bool isNum(MPackType t) => t == MPackType.SInt || t == MPackType.UInt || t == MPackType.Single || t == MPackType.Double;
+            bool isNum(MTokenType t) => t == MTokenType.SInt || t == MTokenType.UInt || t == MTokenType.Single || t == MTokenType.Double;
 
             if (isNum(ValueType))
             {
@@ -433,15 +430,15 @@ namespace CS
                     var otherVal = other.To<double>();
                     return thisVal.CompareTo(otherVal);
                 }
-                if (other.ValueType == MPackType.String)
+                if (other.ValueType == MTokenType.String)
                     return -1;
                 throw new NotSupportedException("Only numeric or string types can be compared.");
             }
-            if (ValueType == MPackType.String)
+            if (ValueType == MTokenType.String)
             {
                 if (isNum(other.ValueType))
                     return 1;
-                if (other.ValueType == MPackType.String)
+                if (other.ValueType == MTokenType.String)
                     return To<string>().CompareTo(other.To<string>());
             }
             throw new NotSupportedException("Only numeric or string types can be compared.");

@@ -1,14 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Text;
+﻿using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace CS
+namespace MPack
 {
-    public static class Extensions
+    internal static class Extensions
     {
         private const string EX_STREAMEND = "Stream ended but expecting more data. Data may be incorrupt or stream ended prematurely.";
 
@@ -20,6 +16,7 @@ namespace CS
                 throw new InvalidDataException(EX_STREAMEND);
             return buffer;
         }
+
         public static byte[] Read(this Stream stream, uint count)
         {
             byte[] buffer = new byte[count];
@@ -37,6 +34,7 @@ namespace CS
                 throw new InvalidDataException(EX_STREAMEND);
             return buffer;
         }
+
         private static int FillBuffer_internal(Stream stream, byte[] buffer, int offset, int length)
         {
             int totalRead = 0;
@@ -57,6 +55,7 @@ namespace CS
             var b = await stream.ReadAsync(1, token);
             return b[0];
         }
+
         public static async Task<byte[]> ReadAsync(this Stream stream, int count, CancellationToken token)
         {
             byte[] buffer = new byte[count];
@@ -65,6 +64,7 @@ namespace CS
                 throw new InvalidDataException(EX_STREAMEND);
             return buffer;
         }
+
         public static async Task<byte[]> ReadAsync(this Stream stream, uint count, CancellationToken token)
         {
             byte[] buffer = new byte[count];
@@ -82,6 +82,7 @@ namespace CS
                 throw new InvalidDataException(EX_STREAMEND);
             return buffer;
         }
+
         private static async Task<int> FillBufferAsync_internal(Stream stream, byte[] buffer, int offset, int length, CancellationToken token)
         {
             int totalRead = 0;

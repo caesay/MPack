@@ -2,10 +2,42 @@
 using System.Linq;
 using Xunit;
 
-namespace CS.MPackTests
+namespace MPack.Tests
 {
     public class Tests
     {
+        [Fact]
+        public void ReadmeExample()
+        {
+            var dictionary = new MDict
+            {
+                {
+                    "array1", MToken.From(new[]
+                    {
+                        "array1_value1",  // implicitly converted string
+                        MToken.From("array1_value2"),
+                    })
+                },
+                {"bool1", MToken.From(true)}, //boolean
+                {"double1", MToken.From(50.5)}, //single-precision float
+                {"double2", MToken.From(15.2)},
+                {"int1", 50505}, // implicitly converted integer
+                {"int2", MToken.From(50)} // integer
+            };
+
+            byte[] encodedBytes = dictionary.EncodeToBytes();
+            var reconstructed = MToken.ParseFromBytes(encodedBytes);
+
+            bool bool1 = reconstructed["bool1"].To<bool>();
+            var array1 = reconstructed["array1"] as MArray;
+            var array1_value1 = array1[0];
+            double double1 = reconstructed["double1"].To<double>();
+
+            Assert.True(bool1);
+            Assert.Equal("array1_value1", array1_value1.To<string>());
+            Assert.Equal(50.5, double1);
+        }
+
         [Fact]
         public void TestDouble()
         {
@@ -26,32 +58,32 @@ namespace CS.MPackTests
             };
             foreach (var value in tests)
             {
-                Assert.Equal(value, MPack.ParseFromBytes(MPack.From(value).EncodeToBytes()).To<double>());
+                Assert.Equal(value, MToken.ParseFromBytes(MToken.From(value).EncodeToBytes()).To<double>());
             }
         }
 
         [Fact]
         public void TestNumRepr()
         {
-            Assert.True(Enumerable.SequenceEqual(MPack.From(127).EncodeToBytes(), new byte[] { 0b01111111 }), "127");
-            Assert.True(Enumerable.SequenceEqual(MPack.From(0xFF).EncodeToBytes(), new byte[] { 0xCC, 0xFF }), "255");
-            Assert.True(Enumerable.SequenceEqual(MPack.From(0x7FFF).EncodeToBytes(), new byte[] { 0xD1, 0x7F, 0xFF }), "0x7FFF");
-            Assert.True(Enumerable.SequenceEqual(MPack.From((UInt16)0x7FFF).EncodeToBytes(), new byte[] { 0xCD, 0x7F, 0xFF }), "(UInt16)0x7FFF");
-            Assert.True(Enumerable.SequenceEqual(MPack.From(0xFFFF).EncodeToBytes(), new byte[] { 0xCD, 0xFF, 0xFF }), "0xFFFF");
-            Assert.True(Enumerable.SequenceEqual(MPack.From(0xFFFFFFFF).EncodeToBytes(), new byte[] { 0xCE, 0xFF, 0xFF, 0xFF, 0xFF }), "0xFFFFFFFF");
-            Assert.True(Enumerable.SequenceEqual(((MPack)0xF_FFFF_FFFF).EncodeToBytes(), new byte[] { 0xD3, 0x00, 0x00, 0x00, 0x0F, 0xFF, 0xFF, 0xFF, 0xFF }), "0xF_FFFF_FFFF");
-            Assert.True(Enumerable.SequenceEqual(((MPack)(ulong)0xF_FFFF_FFFF).EncodeToBytes(), new byte[] { 0xCF, 0x00, 0x00, 0x00, 0x0F, 0xFF, 0xFF, 0xFF, 0xFF }), "(ulong)0xF_FFFF_FFFF");
-            Assert.True(Enumerable.SequenceEqual(MPack.From(0x8000_0000_FFFF_FFFF).EncodeToBytes(), new byte[] { 0xCF, 0x80, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF }), "0x8000_0000_FFFF_FFFF");
-            Assert.True(Enumerable.SequenceEqual(MPack.From(-32).EncodeToBytes(), new byte[] { 0b11100000 }), "-32");
-            Assert.True(Enumerable.SequenceEqual(MPack.From(-33).EncodeToBytes(), new byte[] { 0xD0, 0xDF }), "-33");
-            Assert.True(Enumerable.SequenceEqual(MPack.From(-127).EncodeToBytes(), new byte[] { 0xD0, 0x81 }), "-127");
-            Assert.True(Enumerable.SequenceEqual(MPack.From(-128).EncodeToBytes(), new byte[] { 0xD1, 0xFF, 0x80 }), "-128");
+            Assert.True(Enumerable.SequenceEqual(MToken.From(127).EncodeToBytes(), new byte[] { 0b01111111 }), "127");
+            Assert.True(Enumerable.SequenceEqual(MToken.From(0xFF).EncodeToBytes(), new byte[] { 0xCC, 0xFF }), "255");
+            Assert.True(Enumerable.SequenceEqual(MToken.From(0x7FFF).EncodeToBytes(), new byte[] { 0xD1, 0x7F, 0xFF }), "0x7FFF");
+            Assert.True(Enumerable.SequenceEqual(MToken.From((UInt16)0x7FFF).EncodeToBytes(), new byte[] { 0xCD, 0x7F, 0xFF }), "(UInt16)0x7FFF");
+            Assert.True(Enumerable.SequenceEqual(MToken.From(0xFFFF).EncodeToBytes(), new byte[] { 0xCD, 0xFF, 0xFF }), "0xFFFF");
+            Assert.True(Enumerable.SequenceEqual(MToken.From(0xFFFFFFFF).EncodeToBytes(), new byte[] { 0xCE, 0xFF, 0xFF, 0xFF, 0xFF }), "0xFFFFFFFF");
+            Assert.True(Enumerable.SequenceEqual(((MToken)0xF_FFFF_FFFF).EncodeToBytes(), new byte[] { 0xD3, 0x00, 0x00, 0x00, 0x0F, 0xFF, 0xFF, 0xFF, 0xFF }), "0xF_FFFF_FFFF");
+            Assert.True(Enumerable.SequenceEqual(((MToken)(ulong)0xF_FFFF_FFFF).EncodeToBytes(), new byte[] { 0xCF, 0x00, 0x00, 0x00, 0x0F, 0xFF, 0xFF, 0xFF, 0xFF }), "(ulong)0xF_FFFF_FFFF");
+            Assert.True(Enumerable.SequenceEqual(MToken.From(0x8000_0000_FFFF_FFFF).EncodeToBytes(), new byte[] { 0xCF, 0x80, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF }), "0x8000_0000_FFFF_FFFF");
+            Assert.True(Enumerable.SequenceEqual(MToken.From(-32).EncodeToBytes(), new byte[] { 0b11100000 }), "-32");
+            Assert.True(Enumerable.SequenceEqual(MToken.From(-33).EncodeToBytes(), new byte[] { 0xD0, 0xDF }), "-33");
+            Assert.True(Enumerable.SequenceEqual(MToken.From(-127).EncodeToBytes(), new byte[] { 0xD0, 0x81 }), "-127");
+            Assert.True(Enumerable.SequenceEqual(MToken.From(-128).EncodeToBytes(), new byte[] { 0xD1, 0xFF, 0x80 }), "-128");
         }
 
         [Fact]
         public void TestNull()
         {
-            Assert.Equal(null, MPack.ParseFromBytes(MPack.Null().EncodeToBytes()).To<object>());
+            Assert.Equal(null, MToken.ParseFromBytes(MToken.Null().EncodeToBytes()).To<object>());
         }
 
         [Fact]
@@ -68,7 +100,7 @@ namespace CS.MPackTests
             };
             foreach (var value in tests)
             {
-                Assert.Equal(value, MPack.ParseFromBytes(MPack.From(value).EncodeToBytes()).To<string>());
+                Assert.Equal(value, MToken.ParseFromBytes(MToken.From(value).EncodeToBytes()).To<string>());
             }
         }
 
@@ -92,34 +124,34 @@ namespace CS.MPackTests
             };
             foreach (var value in tests)
             {
-                Assert.Equal(value, MPack.ParseFromBytes(MPack.From(value).EncodeToBytes()).To<long>());
+                Assert.Equal(value, MToken.ParseFromBytes(MToken.From(value).EncodeToBytes()).To<long>());
             }
         }
 
         [Fact]
         public void TestMap()
         {
-            MPackMap dictionary = new MPackMap
+            MDict dictionary = new MDict
             {
                 {
-                    "array1", MPack.From(new[]
+                    "array1", MToken.From(new[]
                     {
-                        MPack.From("array1_value1"),
-                        MPack.From("array1_value2"),
-                        MPack.From("array1_value3"),
+                        MToken.From("array1_value1"),
+                        MToken.From("array1_value2"),
+                        MToken.From("array1_value3"),
                     })
                 },
-                {"bool1", MPack.From(true)},
-                {"double1", MPack.From(50.5)},
-                {"double2", MPack.From(15.2)},
-                {"int1", MPack.From(50505)},
-                {"int2", MPack.From(50)},
-                {3.14, MPack.From(3.14)},
-                {42, MPack.From(42)}
+                {"bool1", MToken.From(true)},
+                {"double1", MToken.From(50.5)},
+                {"double2", MToken.From(15.2)},
+                {"int1", MToken.From(50505)},
+                {"int2", MToken.From(50)},
+                {3.14, MToken.From(3.14)},
+                {42, MToken.From(42)}
             };
 
             var bytes = dictionary.EncodeToBytes();
-            var result = MPack.ParseFromBytes(bytes) as MPackMap;
+            var result = MToken.ParseFromBytes(bytes) as MDict;
             Assert.Equal(dictionary, result);
         }
 
@@ -136,12 +168,12 @@ namespace CS.MPackTests
                 Single.PositiveInfinity,
                 Single.NegativeInfinity,
                 Single.Epsilon,
-            }.Select(f => MPack.From(f))
+            }.Select(f => MToken.From(f))
             .ToArray();
 
-            var arr = new MPackArray(tests);
+            var arr = new MArray(tests);
             var bytes = arr.EncodeToBytes();
-            var round = MPack.ParseFromBytes(bytes) as MPackArray;
+            var round = MToken.ParseFromBytes(bytes) as MArray;
 
             Assert.True(round != null);
             Assert.True(arr.Count == round.Count);
@@ -162,15 +194,15 @@ namespace CS.MPackTests
             };
             foreach (var value in tests)
             {
-                Assert.Equal(value, MPack.ParseFromBytes(MPack.From(value).EncodeToBytes()).To<ulong>());
+                Assert.Equal(value, MToken.ParseFromBytes(MToken.From(value).EncodeToBytes()).To<ulong>());
             }
         }
 
         [Fact]
         public void TestBoolean()
         {
-            var tru = MPack.ParseFromBytes(MPack.From(true).EncodeToBytes()).To<bool>();
-            var fal = MPack.ParseFromBytes(MPack.From(false).EncodeToBytes()).To<bool>();
+            var tru = MToken.ParseFromBytes(MToken.From(true).EncodeToBytes()).To<bool>();
+            var fal = MToken.ParseFromBytes(MToken.From(false).EncodeToBytes()).To<bool>();
             Assert.True(tru);
             Assert.False(fal);
         }
@@ -191,7 +223,7 @@ namespace CS.MPackTests
             };
             foreach (var value in tests)
             {
-                Assert.Equal(value, MPack.ParseFromBytes(MPack.From(value).EncodeToBytes()).To<float>());
+                Assert.Equal(value, MToken.ParseFromBytes(MToken.From(value).EncodeToBytes()).To<float>());
             }
         }
 
@@ -208,7 +240,7 @@ namespace CS.MPackTests
             };
             foreach (var value in tests)
             {
-                var result = MPack.ParseFromBytes(MPack.From(value).EncodeToBytes()).To<byte[]>();
+                var result = MToken.ParseFromBytes(MToken.From(value).EncodeToBytes()).To<byte[]>();
                 Assert.True(Enumerable.SequenceEqual(value, result));
             }
         }

@@ -1,12 +1,6 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace CS
+﻿namespace MPack
 {
-    public enum MPackType
+    public enum MTokenType
     {
         Null = 0,
         Bool = 1,

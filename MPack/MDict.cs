@@ -2,44 +2,42 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
-namespace CS
+namespace MPack
 {
-    public class MPackMap : MPack, IDictionary<MPack, MPack>
+    public class MDict : MToken, IDictionary<MToken, MToken>
     {
         public int Count { get { return _collection.Count; } }
         public bool IsReadOnly { get { return _collection.IsReadOnly; } }
-        public ICollection<MPack> Keys { get { return _collection.Keys; } }
-        public ICollection<MPack> Values { get { return _collection.Values; } }
+        public ICollection<MToken> Keys { get { return _collection.Keys; } }
+        public ICollection<MToken> Values { get { return _collection.Values; } }
         public override object Value { get { return _collection; } }
-        public override MPackType ValueType { get { return MPackType.Map; } }
+        public override MTokenType ValueType { get { return MTokenType.Map; } }
 
-        private IDictionary<MPack, MPack> _collection;
+        private IDictionary<MToken, MToken> _collection;
 
-        public MPackMap()
+        public MDict()
         {
-            _collection = new Dictionary<MPack, MPack>();
+            _collection = new Dictionary<MToken, MToken>();
         }
-        public MPackMap(IDictionary<MPack, MPack> seed)
+        public MDict(IDictionary<MToken, MToken> seed)
         {
-            _collection = new Dictionary<MPack, MPack>(seed);
+            _collection = new Dictionary<MToken, MToken>(seed);
         }
-        public MPackMap(IEnumerable<KeyValuePair<MPack, MPack>> seed)
+        public MDict(IEnumerable<KeyValuePair<MToken, MToken>> seed)
         {
-            _collection = new Dictionary<MPack, MPack>();
+            _collection = new Dictionary<MToken, MToken>();
             foreach (var v in seed)
                 _collection.Add(v);
         }
 
-        public override MPack this[MPack key]
+        public override MToken this[MToken key]
         {
             get { return _collection[key]; }
             set { _collection[key] = value; }
         }
 
-        public IEnumerator<KeyValuePair<MPack, MPack>> GetEnumerator()
+        public IEnumerator<KeyValuePair<MToken, MToken>> GetEnumerator()
         {
             return _collection.GetEnumerator();
         }
@@ -47,7 +45,7 @@ namespace CS
         {
             return GetEnumerator();
         }
-        public void Add(KeyValuePair<MPack, MPack> item)
+        public void Add(KeyValuePair<MToken, MToken> item)
         {
             _collection.Add(item);
         }
@@ -55,35 +53,35 @@ namespace CS
         {
             _collection.Clear();
         }
-        public bool Contains(KeyValuePair<MPack, MPack> item)
+        public bool Contains(KeyValuePair<MToken, MToken> item)
         {
             return _collection.Contains(item);
         }
-        public void CopyTo(KeyValuePair<MPack, MPack>[] array, int arrayIndex)
+        public void CopyTo(KeyValuePair<MToken, MToken>[] array, int arrayIndex)
         {
             _collection.CopyTo(array, arrayIndex);
         }
-        public bool Remove(KeyValuePair<MPack, MPack> item)
+        public bool Remove(KeyValuePair<MToken, MToken> item)
         {
             return _collection.Remove(item);
         }
-        public bool ContainsKey(MPack key)
+        public bool ContainsKey(MToken key)
         {
             return _collection.ContainsKey(key);
         }
-        public bool ContainsKeys(IEnumerable<MPack> keys)
+        public bool ContainsKeys(IEnumerable<MToken> keys)
         {
             return keys.All(ContainsKey);
         }
-        public void Add(MPack key, MPack value)
+        public void Add(MToken key, MToken value)
         {
             _collection.Add(key, value);
         }
-        public bool Remove(MPack key)
+        public bool Remove(MToken key)
         {
             return _collection.Remove(key);
         }
-        public bool TryGetValue(MPack key, out MPack value)
+        public bool TryGetValue(MToken key, out MToken value)
         {
             return _collection.TryGetValue(key, out value);
         }
@@ -93,5 +91,4 @@ namespace CS
             return String.Join(",", this.Select(kvp => kvp.Key.ToString() + ":" + kvp.Value.ToString()));
         }
     }
-
 }

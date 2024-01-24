@@ -1,16 +1,18 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
+
   <PropertyGroup>
     <TargetFrameworks>net48;net6.0</TargetFrameworks>
     <OutputType>Library</OutputType>
-    <RootNamespace>CS.MPackTests</RootNamespace>
-    <AssemblyName>CS.MPackTests</AssemblyName>
   </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\MPack\MPack.csproj" />
   </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="xunit" Version="2.6.4" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.5.6" PrivateAssets="All" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
   </ItemGroup>
+
 </Project>

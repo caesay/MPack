@@ -3,7 +3,6 @@
   <PropertyGroup>
     <TargetFrameworks>net45;net48;netstandard2.0;net6.0</TargetFrameworks>
     <OutputType>Library</OutputType>
-    <RootNamespace>CS</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
@@ -11,8 +10,8 @@
     <Title>MPack</Title>
     <Description>MPack</Description>
     <PackageId>MPack</PackageId>
-    <Description>An extremely light weight, no fluff MessagePack reader/writer.</Description>
-    <PackageTags>mpack;messagepack;serializer;binary;deserializer</PackageTags>
+    <Description>A seriously light weight, no fluff MessagePack reader/writer.</Description>
+    <PackageTags>mpack;messagepack;msgpack;serializer;binary;deserializer</PackageTags>
     <PackageIconUrl>https://cli.msgpack.org/images/msgpack.ico</PackageIconUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>

@@ -1,49 +1,47 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
 
-namespace CS
+namespace MPack
 {
     internal class Writer
     {
         private static readonly Encoding _encoding = Encoding.UTF8;
         private static readonly IBitConverter _convert = EndianBitConverter.Big;
 
-        public static void EncodeToStream(Stream ms, MPack m)
+        public static void EncodeToStream(Stream ms, MToken m)
         {
             switch (m.ValueType)
             {
-                case MPackType.Null:
+                case MTokenType.Null:
                     WriteNull(ms);
                     break;
-                case MPackType.String:
+                case MTokenType.String:
                     WriteString(ms, Convert.ToString(m.Value));
                     break;
-                case MPackType.SInt:
+                case MTokenType.SInt:
                     WriteInteger(ms, Convert.ToInt64(m.Value));
                     break;
-                case MPackType.UInt:
+                case MTokenType.UInt:
                     WriteInteger(ms, Convert.ToUInt64(m.Value));
                     break;
-                case MPackType.Bool:
+                case MTokenType.Bool:
                     WriteBoolean(ms, Convert.ToBoolean(m.Value));
                     break;
-                case MPackType.Single:
+                case MTokenType.Single:
                     WriteSingle(ms, Convert.ToSingle(m.Value));
                     break;
-                case MPackType.Double:
+                case MTokenType.Double:
                     WriteDouble(ms, Convert.ToDouble(m.Value));
                     break;
-                case MPackType.Binary:
+                case MTokenType.Binary:
                     WriteBinary(ms, (byte[])m.Value);
                     break;
-                case MPackType.Map:
+                case MTokenType.Map:
                     WriteMap(ms, m);
                     break;
-                case MPackType.Array:
+                case MTokenType.Array:
                     WriteArray(ms, m);
                     break;
                 default:
@@ -52,9 +50,9 @@ namespace CS
             }
         }
 
-        private static void WriteMap(Stream stream, MPack mpack)
+        private static void WriteMap(Stream stream, MToken mpack)
         {
-            MPackMap map = mpack as MPackMap;
+            MDict map = mpack as MDict;
             if (map == null)
                 throw new InvalidOperationException("A call to WriteMap can not occur unless type is of MsgPackMap");
 
@@ -82,15 +80,15 @@ namespace CS
                 stream.Write(lenBytes, 0, lenBytes.Length);
             }
 
-            foreach (KeyValuePair<MPack, MPack> child in map)
+            foreach (KeyValuePair<MToken, MToken> child in map)
             {
                 EncodeToStream(stream, child.Key);
                 EncodeToStream(stream, child.Value);
             }
         }
-        private static void WriteArray(Stream ms, MPack mpack)
+        private static void WriteArray(Stream ms, MToken mpack)
         {
-            MPackArray list = mpack as MPackArray;
+            MArray list = mpack as MArray;
             if (list == null)
                 throw new InvalidOperationException("A call to WirteArray can not occur unless type is of MsgPackArray");
 

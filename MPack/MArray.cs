@@ -2,28 +2,27 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
-namespace CS
+namespace MPack
 {
-    public sealed class MPackArray : MPack, IList<MPack>
+    public sealed class MArray : MToken, IList<MToken>
     {
         public override object Value { get { return _collection.AsReadOnly(); } }
-        public override MPackType ValueType { get { return MPackType.Array; } }
+        public override MTokenType ValueType { get { return MTokenType.Array; } }
 
-        private List<MPack> _collection = new List<MPack>();
+        private List<MToken> _collection = new List<MToken>();
 
-        public MPackArray()
+        public MArray()
         {
         }
-        public MPackArray(IEnumerable<MPack> seed)
+
+        public MArray(IEnumerable<MToken> seed)
         {
             foreach (var v in seed)
                 _collection.Add(v);
         }
 
-        public override MPack this[int index]
+        public override MToken this[int index]
         {
             get { return _collection[index]; }
             set { _collection[index] = value; }
@@ -37,7 +36,7 @@ namespace CS
         {
             get { return false; }
         }
-        public void Add(MPack item)
+        public void Add(MToken item)
         {
             _collection.Add(item);
         }
@@ -45,23 +44,23 @@ namespace CS
         {
             _collection.Clear();
         }
-        public bool Contains(MPack item)
+        public bool Contains(MToken item)
         {
             return _collection.Contains(item);
         }
-        public void CopyTo(MPack[] array, int arrayIndex)
+        public void CopyTo(MToken[] array, int arrayIndex)
         {
             _collection.CopyTo(array, arrayIndex);
         }
-        public int IndexOf(MPack item)
+        public int IndexOf(MToken item)
         {
             return _collection.IndexOf(item);
         }
-        public void Insert(int index, MPack item)
+        public void Insert(int index, MToken item)
         {
             _collection.Insert(index, item);
         }
-        public bool Remove(MPack item)
+        public bool Remove(MToken item)
         {
             return _collection.Remove(item);
         }
@@ -69,7 +68,7 @@ namespace CS
         {
             _collection.RemoveAt(index);
         }
-        public IEnumerator<MPack> GetEnumerator()
+        public IEnumerator<MToken> GetEnumerator()
         {
             return _collection.GetEnumerator();
         }

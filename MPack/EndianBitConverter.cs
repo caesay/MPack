@@ -1,7 +1,7 @@
 ﻿// from https://github.com/caesay/CS.Util/blob/master/CS.Util/EndianBitConverter.cs
 using System;
 
-namespace CS
+namespace MPack
 {
     internal interface IBitConverter
     {
