@@ -2,7 +2,7 @@ MPack
 =====
 This library is a lightweight implementation of the [MessagePack](http://msgpack.org/) binary serialization format. MessagePack is a 1-to-1 binary representation of JSON, and the official specification can be found here: [https://github.com/msgpack...](https://github.com/msgpack/msgpack/blob/master/spec.md).
 
-![Build status](https://ci.appveyor.com/api/projects/status/84jv0lllniqsicpb?svg=true) (https://ci.appveyor.com/project/caesay/mpack)
+
 
 Notes
 -----
@@ -60,10 +60,3 @@ var array1_value1 = array1[0];
 double double1 = reconstructed["double1"].To<double>();
 //etc...
 ```
-
-Credits
--------
-The following people/projects have made this possible:
-
-0. Me: [caelantsayler]at[gmail]dot[com]
-0. All of the people that make MessagePack happen: https://github.com/msgpack
