@@ -13,9 +13,9 @@
 //  bux fixes and an API that remains lightweight compared to the official one,              //
 //  while remaining robust and easy to use.                                                  //
 //                                                                                           //                 
-//  Written by Caelan Sayler [caelantsayler]at[gmail]dot[com]                                //
+//  Written by Caelan Sayler git@caesay.com                                                  //
 //  Original URL: https://github.com/caesay/MPack                                            //
-//  Licensed: Attribution 4.0 (CC BY 4.0) http://creativecommons.org/licenses/by/4.0/        //
+//  Licensed: MIT                                                                            //
 //                                                                                           //
 ///////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -30,7 +30,7 @@ using System.Threading.Tasks;
 
 namespace CS
 {
-    public class MPack : IEquatable<MPack>, IConvertible
+    public class MPack : IEquatable<MPack>, IConvertible, IComparable<MPack>
     {
         public virtual object Value { get { return _value; } }
         public virtual MPackType ValueType { get { return _type; } }
@@ -90,7 +90,7 @@ namespace CS
             if (value == null)
                 return new MPack(null, MPackType.Null);
 
-            if(!type.IsInstanceOfType(value))
+            if (!type.IsInstanceOfType(value))
                 throw new ArgumentException("Type does not match provided object.");
             if (type.IsArray)
             {
@@ -229,6 +229,7 @@ namespace CS
         public static implicit operator MPack(sbyte value) { return From(value); }
         public static implicit operator MPack(short value) { return From(value); }
         public static implicit operator MPack(int value) { return From(value); }
+        public static implicit operator MPack(long value) { return From(value); }
         public static implicit operator MPack(string value) { return From(value); }
         public static implicit operator MPack(byte[] value) { return From(value); }
         public static implicit operator MPack(MPack[] value) { return From(value); }
@@ -243,9 +244,10 @@ namespace CS
         public static explicit operator sbyte(MPack value) { return value.To<sbyte>(); }
         public static explicit operator short(MPack value) { return value.To<short>(); }
         public static explicit operator int(MPack value) { return value.To<int>(); }
+        public static explicit operator long(MPack value) { return value.To<long>(); }
         public static explicit operator string(MPack value) { return value.To<string>(); }
-        public static explicit operator byte[] (MPack value) { return value.To<byte[]>(); }
-        public static explicit operator MPack[] (MPack value) { return value.To<MPack[]>(); }
+        public static explicit operator byte[](MPack value) { return value.To<byte[]>(); }
+        public static explicit operator MPack[](MPack value) { return value.To<MPack[]>(); }
 
         public static MPack ParseFromBytes(byte[] array)
         {
@@ -414,6 +416,35 @@ namespace CS
         object IConvertible.ToType(Type conversionType, IFormatProvider provider)
         {
             return To(conversionType);
+        }
+
+        public int CompareTo(MPack other)
+        {
+            // This interface is meant to be used when we need to order a MPackMap by its keys.
+            // Only makes sense for numeric and string types.
+            // Since we can mix numeric and string keys, we choose that numerics come before strings.
+            bool isNum(MPackType t) => t == MPackType.SInt || t == MPackType.UInt || t == MPackType.Single || t == MPackType.Double;
+
+            if (isNum(ValueType))
+            {
+                if (isNum(other.ValueType))
+                {
+                    var thisVal = To<double>();
+                    var otherVal = other.To<double>();
+                    return thisVal.CompareTo(otherVal);
+                }
+                if (other.ValueType == MPackType.String)
+                    return -1;
+                throw new NotSupportedException("Only numeric or string types can be compared.");
+            }
+            if (ValueType == MPackType.String)
+            {
+                if (isNum(other.ValueType))
+                    return 1;
+                if (other.ValueType == MPackType.String)
+                    return To<string>().CompareTo(other.To<string>());
+            }
+            throw new NotSupportedException("Only numeric or string types can be compared.");
         }
     }
 }
