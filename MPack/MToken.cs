@@ -20,8 +20,13 @@
 ///////////////////////////////////////////////////////////////////////////////////////////////
 
 using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Reflection;
+using System.Runtime.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -79,31 +84,36 @@ namespace MPack
 
         public static MToken From(object value)
         {
-            return From(value, value.GetType());
-        }
-
-        public static MToken From(object value, Type type)
-        {
             if (value == null)
                 return new MToken(null, MTokenType.Null);
 
-            if (!type.IsInstanceOfType(value))
-                throw new ArgumentException("Type does not match provided object.");
-            if (type.IsArray)
+            if (value is MToken token)
+                return token;
+
+            var type = value.GetType();
+
+            // if type is byte[], convert it to a binary MToken
+            if (type == typeof(byte[]))
             {
-                var elementType = type.GetElementType();
-                if (elementType == typeof(byte))
-                    return new MToken(value, MTokenType.Binary);
-                if (elementType == typeof(MToken))
-                    return new MArray((MToken[])value);
+                return new MToken(value, MTokenType.Binary);
+            }
 
-                var elementTypeCode = (int)Type.GetTypeCode(elementType);
-                if (elementTypeCode <= 2 || elementTypeCode == 16)
-                    throw new NotSupportedException(String.Format("The specified array type ({0}) is not supported by MsgPack", elementType.Name));
+            // if type is an IDictionary, convert it to MDict
+            if (value is IDictionary)
+            {
+                MDict resultDict = new MDict();
+                foreach (DictionaryEntry entry in (IDictionary)value)
+                {
+                    resultDict.Add(From(entry.Key), From(entry.Value));
+                }
+                return resultDict;
+            }
 
+            // if type implements ICollection, convert it to MArray
+            if (value is ICollection)
+            {
                 MArray resultArray = new MArray();
-                Array inputArray = (Array)value;
-                foreach (var obj in inputArray)
+                foreach (var obj in (ICollection)value)
                 {
                     resultArray.Add(From(obj));
                 }
@@ -141,41 +151,125 @@ namespace MPack
                     return new MToken((double)(decimal)value, MTokenType.Double);
                 case TypeCode.String:
                     return new MToken(value, MTokenType.String);
+                case TypeCode.DateTime:
+                    return new MToken(((DateTime)value).ToString("o", CultureInfo.InvariantCulture), MTokenType.String);
+                case TypeCode.Object:
+                    return SerializeObject(value);
             }
             throw new NotSupportedException("Tried to create MPack object from unsupported type: " + type.Name);
+        }
+
+        private static List<MemberInfo> GetTypeMembers(Type type)
+        {
+            DataContractAttribute dataContractAttr = type.GetCustomAttribute<DataContractAttribute>();
+            List<MemberInfo> propertiesToSerialize = new List<MemberInfo>();
+
+            if (dataContractAttr != null)
+            {
+                // if [DataContract] is present, only serialize writable properties and fields with [DataMember] attribute
+                propertiesToSerialize.AddRange(type.GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                    .Where(p => p.CanWrite && p.CanRead && p.GetCustomAttribute<DataMemberAttribute>() != null));
+                propertiesToSerialize.AddRange(type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                    .Where(f => f.GetCustomAttribute<DataMemberAttribute>() != null));
+            }
+            else
+            {
+                // if [DataContract] is not present, serialize only read/write public properties which do not have [IgnoreDataMember] attribute
+                propertiesToSerialize.AddRange(type.GetProperties(BindingFlags.Instance | BindingFlags.Public)
+                    .Where(p => p.CanWrite && p.CanRead && p.GetCustomAttribute<IgnoreDataMemberAttribute>() == null));
+            }
+
+            return propertiesToSerialize;
+        }
+
+        private static MToken SerializeObject(object value)
+        {
+            var type = value.GetType();
+            TypeInfo ti = type.GetTypeInfo();
+            var isClass = ti.IsClass || ti.IsInterface || ti.IsAbstract;
+            var isClassRecord = isClass && ti.IsClassRecord();
+            //var isStruct = ti.IsValueType;
+
+            var propertiesToSerialize = GetTypeMembers(type);
+
+            MDict resultDict = new MDict();
+            foreach (var prop in propertiesToSerialize)
+            {
+                string key = prop.Name;
+                object propValue = null;
+                Type propType = null;
+
+                if (prop is PropertyInfo pi)
+                {
+                    propValue = pi.GetValue(value);
+                    propType = pi.PropertyType;
+
+                    if (isClassRecord && prop.Name == "EqualityContract") continue;
+                }
+                else if (prop is FieldInfo fi)
+                {
+                    propValue = fi.GetValue(value);
+                    propType = fi.FieldType;
+
+                    if (fi.IsStatic) continue;
+                    if (fi.IsInitOnly) continue;
+                    if (fi.GetCustomAttribute<System.Runtime.CompilerServices.CompilerGeneratedAttribute>(true) != null) continue;
+                }
+
+                var dataMemberAttr = prop.GetCustomAttribute<DataMemberAttribute>();
+
+                // if [DataMember] is not present, use the property name as the key
+                // if [DataMember] is present:
+                // - use its Name property as the key if IsNameSetExplicitly is true
+                // - do not serialize the property if EmitDefaultValue is false and the value is the default value
+                if (dataMemberAttr != null)
+                {
+                    if (dataMemberAttr.IsNameSetExplicitly)
+                    {
+                        key = dataMemberAttr.Name;
+                    }
+                    if (!dataMemberAttr.EmitDefaultValue && !propValue.Equals(propType.GetDefaultType()))
+                    {
+                        continue;
+                    }
+                }
+
+                resultDict.Add(key, From(propValue));
+            }
+
+            return resultDict;
         }
 
         public object To(Type t)
         {
             if (ValueType == MTokenType.Null)
                 return null;
-            if (t == typeof(object))
-                return Value;
 
-            // handle basic array types, ex. string[], int[], etc.
-            // will fail if one of the child objects is of the incorrect type.
+            if (t == typeof(DateTime))
+            {
+                return DateTime.Parse(To<string>(), CultureInfo.InvariantCulture);
+            }
+
+            if (t == typeof(object))
+            {
+                if (this is MArray)
+                    return ((MArray)this).Select(r => r.To<object>()).ToArray();
+                if (this is MDict)
+                    return ((MDict)this).ToDictionary(r => r.Key.To<object>(), r => r.Value.To<object>());
+                return Value;
+            }
+
+            // if we are MArray and the target type is T[], convert all the elements to T
             if (t.IsArray)
             {
                 var elementType = t.GetElementType();
-                if (elementType == typeof(byte))
+                if (elementType == typeof(byte) && ValueType == MTokenType.Binary)
                     return (byte[])Value;
 
-                if (elementType == typeof(object))
-                    throw new ArgumentException("Array element type must not equal typeof(object).", nameof(t));
+                if (ValueType != MTokenType.Array)
+                    throw new NotSupportedException("Cannot convert MPack type " + ValueType + " into type " + t.Name + " (it is not an array).");
 
-                int elementTypeCode = (int)Type.GetTypeCode(elementType);
-                if (elementTypeCode <= 2 || elementTypeCode == 16)
-                    throw new NotSupportedException(String.Format("Casting to an array of type {0} is not supported.",
-                        elementType.Name));
-
-                var mpackArray = Value as MArray;
-                if (mpackArray == null)
-                    throw new ArgumentException(String.Format("Cannot conver MPack type {0} into type {1} (it is not an array).",
-                        ValueType, t.Name));
-
-                if (elementType == typeof(MToken))
-                    return mpackArray.ToArray();
-
+                var mpackArray = (MArray)this;
                 var count = mpackArray.Count;
                 var objArray = Array.CreateInstance(elementType, count);
                 for (int i = 0; i < count; i++)
@@ -183,13 +277,92 @@ namespace MPack
                 return objArray;
             }
 
+            // if we are MDict and the target type is IDictionary, convert all the keys and values to TKey and TValue
+            if (typeof(IDictionary).IsAssignableFrom(t))
+            {
+                if (ValueType != MTokenType.Map)
+                    throw new NotSupportedException("Cannot convert MPack type " + ValueType + " into type " + t.Name + " (it is not a dictionary).");
+
+                var keyType = typeof(object);
+                var valueType = typeof(object);
+                if (t.IsGenericType)
+                {
+                    keyType = t.GetGenericArguments()[0];
+                    valueType = t.GetGenericArguments()[1];
+                }
+
+                var mpackDict = (MDict)this;
+                var dict = (IDictionary)Activator.CreateInstance(t);
+                foreach (var kvp in mpackDict)
+                {
+                    dict.Add(kvp.Key.To(keyType), kvp.Value.To(valueType));
+                }
+                return dict;
+            }
+
+            // if we are MArray and the target type is IList, convert all the elements to T
+            if (typeof(IList).IsAssignableFrom(t))
+            {
+                if (ValueType != MTokenType.Array)
+                    throw new NotSupportedException("Cannot convert MPack type " + ValueType + " into type " + t.Name + " (it is not a collection).");
+                var elementType = typeof(object);
+                if (t.IsGenericType)
+                    elementType = t.GetGenericArguments()[0];
+                var mpackArray = (MArray)this;
+                var collection = (IList)Activator.CreateInstance(t);
+                foreach (var obj in mpackArray)
+                {
+                    collection.Add(obj.To(elementType));
+                }
+                return collection;
+            }
+
+            // If the target type is an object, and not a primative, deserialize the object.
+            if (Type.GetTypeCode(t) == TypeCode.Object && ValueType == MTokenType.Map)
+            {
+                return DeserializeObject(t);
+            }
+
             return Convert.ChangeType(Value, t);
         }
+
+        private object DeserializeObject(Type t)
+        {
+            var obj = Activator.CreateInstance(t);
+            var propertiesToSerialize = GetTypeMembers(t);
+            var dict = (MDict)this;
+
+            foreach (var prop in propertiesToSerialize)
+            {
+                string key = prop.Name;
+                var dataMemberAttr = prop.GetCustomAttribute<DataMemberAttribute>();
+                if (dataMemberAttr != null && dataMemberAttr.IsNameSetExplicitly)
+                {
+                    key = dataMemberAttr.Name;
+                }
+
+                if (dict.ContainsKey(key))
+                {
+                    if (prop is PropertyInfo pi)
+                    {
+                        pi.SetValue(obj, dict[key].To(pi.PropertyType));
+                    }
+                    else if (prop is FieldInfo fi)
+                    {
+                        fi.SetValue(obj, dict[key].To(fi.FieldType));
+                    }
+                }
+            }
+
+            return obj;
+        }
+
         public T To<T>()
         {
             return (T)To(typeof(T));
         }
-        public T ToOrDefault<T>()
+
+        public T ToOrDefault<T>(T defaultValue = default)
         {
             try
             {
@@ -197,7 +370,7 @@ namespace MPack
             }
             catch
             {
-                return default(T);
+                return defaultValue;
             }
         }
 
@@ -208,6 +381,7 @@ namespace MPack
                 return m1.Equals(m2);
             return false;
         }
+
         public static bool operator !=(MToken m1, MToken m2)
         {
             if (ReferenceEquals(m1, m2)) return false;
@@ -266,7 +440,6 @@ namespace MPack
         public void EncodeToStream(Stream stream)
         {
             Writer.EncodeToStream(stream, this);
-
         }
         public Task EncodeToStreamAsync(Stream stream)
         {
@@ -293,8 +466,15 @@ namespace MPack
 
         public bool Equals(MToken other)
         {
-            if (ReferenceEquals(other, null))
+            if (ReferenceEquals(other, null) || other.IsNull())
+            {
+                return this.IsNull();
+            }
+
+            if (this.IsNull())
+            {
                 return false;
+            }
 
             if (this is MArray && other is MArray)
             {
@@ -314,14 +494,34 @@ namespace MPack
                     return ob1.OrderBy(r => r.Key).SequenceEqual(ob2.OrderBy(r => r.Key));
                 }
             }
-            else if ((this.ValueType == MTokenType.SInt || this.ValueType == MTokenType.UInt) &&
-                     (other.ValueType == MTokenType.SInt || other.ValueType == MTokenType.UInt))
+            else if (this.IsNumber() && other.IsNumber())
             {
-                decimal xd = Convert.ToDecimal(Value);
-                decimal yd = Convert.ToDecimal(other.Value);
-                return xd == yd;
+                if (this.IsFloatingPoint() && Double.IsNaN(Convert.ToDouble(Value)))
+                {
+                    return Double.IsNaN(Convert.ToDouble(other.Value));
+                }
+                return CompareTo(other) == 0;
             }
-            else return Value.Equals(other.Value);
+            else if (this.ValueType == MTokenType.Null && other.ValueType == MTokenType.Null)
+            {
+                return true;
+            }
+            else if (this.ValueType == MTokenType.Bool && other.ValueType == MTokenType.Bool)
+            {
+                return (bool)Value == (bool)other.Value;
+            }
+            else if (this.ValueType == MTokenType.String && other.ValueType == MTokenType.String)
+            {
+                return (string)Value == (string)other.Value;
+            }
+            else if (this.ValueType == MTokenType.Binary && other.ValueType == MTokenType.Binary)
+            {
+                return ((byte[])Value).IsByteArrayEqual((byte[])other.Value);
+            }
+            else
+            {
+                return Value.Equals(other.Value);
+            }
 
             return false;
         }
@@ -420,27 +620,46 @@ namespace MPack
             // This interface is meant to be used when we need to order a MPackMap by its keys.
             // Only makes sense for numeric and string types.
             // Since we can mix numeric and string keys, we choose that numerics come before strings.
-            bool isNum(MTokenType t) => t == MTokenType.SInt || t == MTokenType.UInt || t == MTokenType.Single || t == MTokenType.Double;
-
-            if (isNum(ValueType))
+            if (this.IsNumber())
             {
-                if (isNum(other.ValueType))
+                if (other.IsNumber())
                 {
-                    var thisVal = To<double>();
-                    var otherVal = other.To<double>();
-                    return thisVal.CompareTo(otherVal);
+                    if (this.IsInDecimalRange() && other.IsInDecimalRange())
+                    {
+                        // decimal can contain every numeric type except double, including single, long, ulong
+                        // etc with no loss of precision or truncation, so we convert to decimal to compare.
+                        decimal thisVal = Convert.ToDecimal(Value);
+                        decimal otherVal = Convert.ToDecimal(other.Value);
+                        return thisVal.CompareTo(otherVal);
+                    }
+                    else
+                    {
+                        // the value is out of range for decimal, so we convert to double to compare.
+                        double thisVal = Convert.ToDouble(Value);
+                        double otherVal = Convert.ToDouble(other.Value);
+                        return thisVal.CompareTo(otherVal);
+                    }
                 }
+
                 if (other.ValueType == MTokenType.String)
+                {
                     return -1;
-                throw new NotSupportedException("Only numeric or string types can be compared.");
+                }
             }
+
             if (ValueType == MTokenType.String)
             {
-                if (isNum(other.ValueType))
+                if (other.IsNumber())
+                {
                     return 1;
+                }
+
                 if (other.ValueType == MTokenType.String)
+                {
                     return To<string>().CompareTo(other.To<string>());
+                }
             }
+
             throw new NotSupportedException("Only numeric or string types can be compared.");
         }
     }

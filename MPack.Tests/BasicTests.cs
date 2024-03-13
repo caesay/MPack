@@ -4,7 +4,7 @@ using Xunit;
 
 namespace MPack.Tests
 {
-    public class Tests
+    public class BasicTests
     {
         [Fact]
         public void ReadmeExample()
@@ -83,7 +83,7 @@ namespace MPack.Tests
         [Fact]
         public void TestNull()
         {
-            Assert.Equal(null, MToken.ParseFromBytes(MToken.Null().EncodeToBytes()).To<object>());
+            Assert.Null(MToken.ParseFromBytes(MToken.Null().EncodeToBytes()).To<object>());
         }
 
         [Fact]
@@ -100,7 +100,9 @@ namespace MPack.Tests
             };
             foreach (var value in tests)
             {
-                Assert.Equal(value, MToken.ParseFromBytes(MToken.From(value).EncodeToBytes()).To<string>());
+                var token = MToken.From(value);
+                Assert.Equal(MTokenType.String, token.ValueType);
+                Assert.Equal(value, MToken.ParseFromBytes(token.EncodeToBytes()).To<string>());
             }
         }
 
@@ -124,7 +126,9 @@ namespace MPack.Tests
             };
             foreach (var value in tests)
             {
-                Assert.Equal(value, MToken.ParseFromBytes(MToken.From(value).EncodeToBytes()).To<long>());
+                var token = MToken.From(value);
+                Assert.Equal(MTokenType.SInt, token.ValueType);
+                Assert.Equal(value, MToken.ParseFromBytes(token.EncodeToBytes()).To<long>());
             }
         }
 
@@ -194,7 +198,9 @@ namespace MPack.Tests
             };
             foreach (var value in tests)
             {
-                Assert.Equal(value, MToken.ParseFromBytes(MToken.From(value).EncodeToBytes()).To<ulong>());
+                var token = MToken.From(value);
+                Assert.Equal(MTokenType.UInt, token.ValueType);
+                Assert.Equal(value, MToken.ParseFromBytes(token.EncodeToBytes()).To<ulong>());
             }
         }
 
@@ -223,7 +229,9 @@ namespace MPack.Tests
             };
             foreach (var value in tests)
             {
-                Assert.Equal(value, MToken.ParseFromBytes(MToken.From(value).EncodeToBytes()).To<float>());
+                var token = MToken.From(value);
+                Assert.Equal(MTokenType.Single, token.ValueType);
+                Assert.Equal(value, MToken.ParseFromBytes(token.EncodeToBytes()).To<float>());
             }
         }
 
@@ -240,7 +248,9 @@ namespace MPack.Tests
             };
             foreach (var value in tests)
             {
-                var result = MToken.ParseFromBytes(MToken.From(value).EncodeToBytes()).To<byte[]>();
+                var token = MToken.From(value);
+                Assert.Equal(MTokenType.Binary, token.ValueType);
+                var result = MToken.ParseFromBytes(token.EncodeToBytes()).To<byte[]>();
                 Assert.True(Enumerable.SequenceEqual(value, result));
             }
         }

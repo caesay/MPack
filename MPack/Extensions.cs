@@ -1,4 +1,7 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
+using System.Linq;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -6,6 +9,75 @@ namespace MPack
 {
     internal static class Extensions
     {
+        public static object GetDefaultType(this Type type)
+        {
+            if (type.IsValueType)
+            {
+                return Activator.CreateInstance(type);
+            }
+            return null;
+        }
+
+        public static bool IsByteArrayEqual(this byte[] a, byte[] b)
+        {
+#if NET6_0_OR_GREATER
+            ReadOnlySpan<byte> a1 = a;
+            ReadOnlySpan<byte> b1 = b;
+            return a1.SequenceEqual(b1);
+#else
+            return a.SequenceEqual(b);
+#endif
+        }
+
+        public static bool IsInDecimalRange(this MToken type)
+        {
+            if (type.IsInteger())
+            {
+                return true;
+            }
+
+            if (type.IsFloatingPoint())
+            {
+                var d = type.To<double>();
+                return d >= Convert.ToDouble(decimal.MinValue) && d <= Convert.ToDouble(decimal.MaxValue);
+            }
+
+            return false;
+        }
+
+        public static bool IsNull(this MToken type)
+        {
+            return type.ValueType == MTokenType.Null;
+        }
+
+        public static bool IsNumber(this MToken type)
+        {
+            return type.IsInteger() || type.IsFloatingPoint();
+        }
+
+        public static bool IsInteger(this MToken token)
+        {
+            return token.ValueType == MTokenType.SInt || token.ValueType == MTokenType.UInt;
+        }
+
+        public static bool IsBoolean(this MToken token)
+        {
+            return token.ValueType == MTokenType.Bool;
+        }
+
+        public static bool IsFloatingPoint(this MToken token)
+        {
+            return token.ValueType == MTokenType.Single || token.ValueType == MTokenType.Double;
+        }
+
+        public static bool IsClassRecord(this TypeInfo type)
+        {
+            // The only truly unique thing about a C# 9 record class is the presence of a <Clone>$ method,
+            // which cannot be declared in C# because of the reserved characters in its name.
+            return type.IsClass
+                && type.GetMethod("<Clone>$", BindingFlags.Public | BindingFlags.Instance) is object;
+        }
+
         private const string EX_STREAMEND = "Stream ended but expecting more data. Data may be incorrupt or stream ended prematurely.";
 
         public static byte[] Read(this Stream stream, int count)
