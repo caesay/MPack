@@ -67,14 +67,14 @@ If your object has the `[DataContract]` attribute, all properties/fields with th
 [DataContract]
 class MyObject
 {
-	[DataMember]
-	public string Name { get; set; }
+    [DataMember]
+    public string Name { get; set; }
 
-	[DataMember]
-	public int Age { get; set; }
+    [DataMember]
+    public int Age { get; set; }
 
     // following will NOT be serialized, because missing [DataMember] attribute
-	public List<string> Friends { get; set; } 
+    public List<string> Friends { get; set; } 
 }
 
 // ...
@@ -90,12 +90,12 @@ and you can use the `[IgnoreDataMember]` attribute to exclude properties from se
 ```csharp
 class MyObject
 {
-	public string Name { get; set; }
+    public string Name { get; set; }
 
-	public int Age { get; set; }
+    public int Age { get; set; }
 
-	[IgnoreDataMember] // will not be serialized
-	public List<string> Friends { get; set; }
+    [IgnoreDataMember] // will not be serialized
+    public List<string> Friends { get; set; }
 }
 ```
 
