@@ -98,6 +98,12 @@ namespace MPack
                 return new MToken(value, MTokenType.Binary);
             }
 
+            // tuples are positional values, so represent them as MessagePack arrays
+            if (IsTupleType(type))
+            {
+                return SerializeTuple(value);
+            }
+
             // if type is an IDictionary, convert it to MDict
             if (value is IDictionary)
             {
@@ -157,6 +163,60 @@ namespace MPack
                     return SerializeObject(value);
             }
             throw new NotSupportedException("Tried to create MPack object from unsupported type: " + type.Name);
+        }
+
+        private static bool IsTupleType(Type type)
+        {
+            if (type.FullName == "System.ValueTuple")
+                return true;
+
+            if (!type.IsGenericType)
+                return false;
+
+            var genericTypeName = type.GetGenericTypeDefinition().FullName;
+            return genericTypeName.StartsWith("System.Tuple`", StringComparison.Ordinal)
+                || genericTypeName.StartsWith("System.ValueTuple`", StringComparison.Ordinal);
+        }
+
+        private static MArray SerializeTuple(object value)
+        {
+            var result = new MArray();
+            AppendTupleItems(value, result);
+            return result;
+        }
+
+        private static void AppendTupleItems(object value, MArray result)
+        {
+            var type = value.GetType();
+            var genericArgumentCount = type.IsGenericType ? type.GetGenericArguments().Length : 0;
+            var itemCount = Math.Min(genericArgumentCount, 7);
+
+            for (var index = 1; index <= itemCount; index++)
+            {
+                result.Add(From(GetTupleMemberValue(type, value, "Item" + index)));
+            }
+
+            if (genericArgumentCount == 8)
+            {
+                var rest = GetTupleMemberValue(type, value, "Rest");
+                if (rest != null && IsTupleType(rest.GetType()))
+                    AppendTupleItems(rest, result);
+                else
+                    result.Add(From(rest));
+            }
+        }
+
+        private static object GetTupleMemberValue(Type type, object value, string memberName)
+        {
+            var property = type.GetProperty(memberName, BindingFlags.Instance | BindingFlags.Public);
+            if (property != null)
+                return property.GetValue(value);
+
+            var field = type.GetField(memberName, BindingFlags.Instance | BindingFlags.Public);
+            if (field != null)
+                return field.GetValue(value);
+
+            throw new InvalidOperationException("Tuple member not found: " + memberName);
         }
 
         private static List<MemberInfo> GetTypeMembers(Type type)
@@ -250,6 +310,14 @@ namespace MPack
                 return DateTime.Parse(To<string>(), CultureInfo.InvariantCulture);
             }
 
+            if (IsTupleType(t))
+            {
+                if (ValueType != MTokenType.Array)
+                    throw new NotSupportedException("Cannot convert MPack type " + ValueType + " into tuple type " + t.Name + " (it is not an array).");
+
+                return DeserializeTuple(t);
+            }
+
             if (t == typeof(object))
             {
                 if (this is MArray)
@@ -324,6 +392,46 @@ namespace MPack
             }
 
             return Convert.ChangeType(Value, t);
+        }
+
+        private object DeserializeTuple(Type type)
+        {
+            var array = (MArray)this;
+            var index = 0;
+            var result = DeserializeTuple(type, array, ref index);
+            if (index != array.Count)
+                throw new NotSupportedException("Cannot convert an array with " + array.Count + " elements into tuple type " + type.Name + ".");
+            return result;
+        }
+
+        private static object DeserializeTuple(Type type, MArray array, ref int index)
+        {
+            var argumentTypes = type.IsGenericType ? type.GetGenericArguments() : Type.EmptyTypes;
+            var arguments = new object[argumentTypes.Length];
+            var itemCount = Math.Min(argumentTypes.Length, 7);
+
+            for (var argumentIndex = 0; argumentIndex < itemCount; argumentIndex++)
+            {
+                if (index >= array.Count)
+                    throw new NotSupportedException("The MessagePack array does not contain enough elements for tuple type " + type.Name + ".");
+                arguments[argumentIndex] = array[index++].To(argumentTypes[argumentIndex]);
+            }
+
+            if (argumentTypes.Length == 8)
+            {
+                if (IsTupleType(argumentTypes[7]))
+                {
+                    arguments[7] = DeserializeTuple(argumentTypes[7], array, ref index);
+                }
+                else
+                {
+                    if (index >= array.Count)
+                        throw new NotSupportedException("The MessagePack array does not contain enough elements for tuple type " + type.Name + ".");
+                    arguments[7] = array[index++].To(argumentTypes[7]);
+                }
+            }
+
+            return Activator.CreateInstance(type, arguments);
         }
 
         private object DeserializeObject(Type t)
