@@ -310,6 +310,14 @@ namespace MPack
                 return DateTime.Parse(To<string>(), CultureInfo.InvariantCulture);
             }
 
+            if (IsTupleType(t))
+            {
+                if (ValueType != MTokenType.Array)
+                    throw new NotSupportedException("Cannot convert MPack type " + ValueType + " into tuple type " + t.Name + " (it is not an array).");
+
+                return DeserializeTuple(t);
+            }
+
             if (t == typeof(object))
             {
                 if (this is MArray)
@@ -384,6 +392,46 @@ namespace MPack
             }
 
             return Convert.ChangeType(Value, t);
+        }
+
+        private object DeserializeTuple(Type type)
+        {
+            var array = (MArray)this;
+            var index = 0;
+            var result = DeserializeTuple(type, array, ref index);
+            if (index != array.Count)
+                throw new NotSupportedException("Cannot convert an array with " + array.Count + " elements into tuple type " + type.Name + ".");
+            return result;
+        }
+
+        private static object DeserializeTuple(Type type, MArray array, ref int index)
+        {
+            var argumentTypes = type.IsGenericType ? type.GetGenericArguments() : Type.EmptyTypes;
+            var arguments = new object[argumentTypes.Length];
+            var itemCount = Math.Min(argumentTypes.Length, 7);
+
+            for (var argumentIndex = 0; argumentIndex < itemCount; argumentIndex++)
+            {
+                if (index >= array.Count)
+                    throw new NotSupportedException("The MessagePack array does not contain enough elements for tuple type " + type.Name + ".");
+                arguments[argumentIndex] = array[index++].To(argumentTypes[argumentIndex]);
+            }
+
+            if (argumentTypes.Length == 8)
+            {
+                if (IsTupleType(argumentTypes[7]))
+                {
+                    arguments[7] = DeserializeTuple(argumentTypes[7], array, ref index);
+                }
+                else
+                {
+                    if (index >= array.Count)
+                        throw new NotSupportedException("The MessagePack array does not contain enough elements for tuple type " + type.Name + ".");
+                    arguments[7] = array[index++].To(argumentTypes[7]);
+                }
+            }
+
+            return Activator.CreateInstance(type, arguments);
         }
 
         private object DeserializeObject(Type t)
